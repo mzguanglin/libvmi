@@ -46,6 +46,9 @@
 #endif
 #include <xen/hvm/save.h>
 
+
+#define MEM_PAGE_MAX_MAP (40 * XC_PAGE_SIZE)
+
 //----------------------------------------------------------------------------
 // Helper functions
 
@@ -73,6 +76,10 @@ xen_get_memory_pfn(
     addr_t pfn,
     int prot)
 {
+
+	printf("foreign_range pfn = %ld\n", pfn);
+	printf("foreign_range xchandle = %ld\n", xen_get_xchandle(vmi));
+	printf("foreign_range domainid = %ld\n", xen_get_domainid(vmi));
     void *memory = xc_map_foreign_range(xen_get_xchandle(vmi),
                                         xen_get_domainid(vmi),
                                         XC_PAGE_SIZE,
@@ -80,7 +87,7 @@ xen_get_memory_pfn(
                                         (unsigned long) pfn);
 
     if (MAP_FAILED == memory || NULL == memory) {
-        dbprint("--xen_get_memory_pfn failed on pfn=0x%"PRIx64"\n", pfn);
+        printf("--xen_get_memory_pfn failed on pfn=0x%"PRIx64"\n", pfn);
         return NULL;
     }
 
@@ -103,7 +110,54 @@ xen_get_memory(
     addr_t pfn = paddr >> vmi->page_shift;
 
     //TODO assuming length == page size is safe for now, but isn't the most clean approach
-    return xen_get_memory_pfn(vmi, pfn, PROT_READ);
+
+
+    	//printf("paddr = %ld, pfn = %ld\n", paddr, pfn);
+    	return xen_get_memory_pfn(vmi, 0, PROT_READ);
+
+
+    //return xen_get_memory_pfn(vmi, pfn, PROT_READ);
+}
+
+void *
+xen_get_mmaped_memory(
+	    vmi_instance_t vmi,
+	    addr_t paddr,
+	    uint32_t length)
+{
+    if (paddr + length > vmi->size) {
+        dbprint
+            ("--%s: request for PA range [0x%.16"PRIx64"-0x%.16"PRIx64"] reads past end of pmemsave file\n",
+             __FUNCTION__, paddr, paddr + length);
+        goto error_noprint;
+    }
+
+
+    xen_instance_t *xen = xen_get_instance(vmi);
+    // TODO
+    // add support for more than 4GB.
+    /*
+    int region_id = paddr / MEM4GB ;
+    addr_t paddr_offset = paddr % MEM4GB;
+    */
+
+    return xen->mapped_guest_memory_regions[0] + paddr;
+
+error_print:
+    dbprint("%s: failed to read %d bytes at "
+                "PA (offset) 0x%.16"PRIx64" [VM size 0x%.16"PRIx64"]\n", __FUNCTION__,
+                length, paddr, vmi->size);
+error_noprint:
+    return NULL;
+}
+
+
+void
+xen_release_mmaped_memory(
+    void *memory,
+    size_t length)
+{
+	// doesn't need to free mmaped memory before tearing down xen driver..
 }
 
 void
@@ -451,8 +505,53 @@ xen_init(
     }
 #endif
 
-    memory_cache_init(vmi, xen_get_memory, xen_release_memory, 0);
+#define MMAP_XEN
+#ifdef MMAP_XEN
+    // mmap foreign pags one time.
+    //foreign_range maps 4GB in maximum at a time.
+	xen_instance_t *xen = xen_get_instance(vmi);
 
+	xen_get_memsize(vmi, &vmi->size);
+    int full_region_num = vmi->size / MEM_PAGE_MAX_MAP;
+    int last_region_size = vmi->size % MEM_PAGE_MAX_MAP;
+    int region_num = last_region_size==0?full_region_num:full_region_num+1;
+
+    dbprint("full_region_num = %d, last_region_size = %d, region_num = %d\n",
+    		full_region_num, last_region_size, region_num);
+    int i;
+    xen->guest_memroy_region_num = 0;
+    for (i=0; i < region_num; i++) {
+
+    	unsigned long pfn_offset = i * MEM_PAGE_MAX_MAP / XC_PAGE_SIZE;
+    	int map_size = (last_region_size==0||i<region_num-1)?MEM_PAGE_MAX_MAP:last_region_size;
+
+
+    	printf("foreign_range "
+    			"pfn_offset = %ld, map_size = %ld \n"
+    			, pfn_offset,  map_size);
+
+    	void *memory = xc_map_foreign_range(xen_get_xchandle(vmi),
+                xen_get_domainid(vmi),
+                map_size,
+                PROT_READ,
+                pfn_offset);
+        if (MAP_FAILED == memory || NULL == memory) {
+            dbprint("xc_map_foreign_range failed on pfn_offset=%d\n", pfn_offset);
+            return VMI_FAILURE;
+        }
+
+        xen_get_instance(vmi)->mapped_guest_memory_regions[i] = memory;
+        xen_get_instance(vmi)->guest_memroy_region_num++;
+    }
+
+
+    memory_cache_init(vmi, xen_get_mmaped_memory, xen_release_mmaped_memory, 0);
+    printf("finish init memory_cache\n");
+
+#else
+
+    memory_cache_init(vmi, xen_get_memory, xen_release_memory, 0);
+#endif
     // Determine the guest address width
     ret = xen_discover_guest_addr_width(vmi);
 
@@ -464,6 +563,19 @@ void
 xen_destroy(
     vmi_instance_t vmi)
 {
+#ifdef MMAP_XEN
+	xen_instance_t *xen = xen_get_instance(vmi);
+	// munmap guest memory
+    int last_region_size = vmi->size % MEM_PAGE_MAX_MAP;
+	if (last_region_size > 0) {
+		munmap(xen->mapped_guest_memory_regions[xen->guest_memroy_region_num--], last_region_size);
+	}
+	while (xen_get_instance(vmi)->guest_memroy_region_num > 0) {
+		munmap(xen->mapped_guest_memory_regions[xen->guest_memroy_region_num--], MEM_PAGE_MAX_MAP);
+	}
+#endif
+
+
 #if ENABLE_XEN_EVENTS==1
     if(xen_get_instance(vmi)->hvm && (vmi->init_mode & VMI_INIT_EVENTS)){
         xen_events_destroy(vmi);

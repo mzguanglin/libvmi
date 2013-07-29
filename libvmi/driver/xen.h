@@ -86,6 +86,10 @@ typedef struct xen_instance {
 #if ENABLE_XEN_EVENTS==1
     xen_events_t *events; /**< handle to events data */
 #endif
+
+
+    void *mapped_guest_memory_regions[10000];           /** 160 page maximum for each region  */
+    int guest_memroy_region_num;
 } xen_instance_t;
 
 #else
