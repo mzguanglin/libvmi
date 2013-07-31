@@ -108,3 +108,6 @@ status_t
 driver_get_address_width(
     vmi_instance_t vmi,
     uint8_t * width);
+inline void *
+driver_get_dgma(
+    vmi_instance_t vmi);

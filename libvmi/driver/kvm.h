@@ -35,6 +35,11 @@ typedef struct kvm_instance {
     char *name;
     char *ds_path;
     int socket_fd;
+
+    char *shm_snapshot_path;  /** shared memory device path in /dev/shm directory */
+    int   shm_snapshot_fd;    /** file description of the shm device */
+    void *shm_snapshot_map;   /** mmaped shared memory region */
+    char *shm_snapshot_cpu_regs;  /** dumped cpu registers */
 } kvm_instance_t;
 
 #else

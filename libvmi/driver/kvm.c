@@ -237,6 +237,191 @@ kvm_get_instance(
     return ((kvm_instance_t *) vmi->driver);
 }
 
+
+static char *
+exec_shm_snapshot(
+	    vmi_instance_t vmi)
+{
+	kvm_instance_t *kvm = kvm_get_instance(vmi);
+
+    char *tmpfile = tempnam("/", (char *) virDomainGetName(kvm->dom));
+    char *query = (char *) safe_malloc(256);
+
+    sprintf(query, "'{\"execute\": \"snapshot\", \"arguments\": {"
+    		" \"size\": %ld, \"filename\": \"/%s\"}}'", vmi->size,
+    		tmpfile);
+    kvm->shm_snapshot_path = strdup(tmpfile);
+    free(tmpfile);
+
+
+	dbprint("--kvm: testing shm snapshot support\n");
+
+	if (VMI_FAILURE == vmi_pause_vm(vmi)) {
+		warnprint("fail to pause VM before snapshot, might cause in-consistant state\n");
+	}
+
+#ifdef MEASUREMENT
+	struct timeval ktv_start;
+	struct timeval ktv_end;
+	long int diff;
+
+	gettimeofday(&ktv_start, 0);
+#endif
+
+	char *output = exec_qmp_cmd(kvm, query);
+
+#ifdef MEASUREMENT
+
+	gettimeofday(&ktv_end, 0);
+
+	print_measurement(ktv_start, ktv_end, &diff);
+
+	printf("QMP snapshot measurement: %ld\n", diff);
+
+#endif
+
+	if (VMI_FAILURE == vmi_resume_vm(vmi)) {
+		warnprint("fail to resume VM after snapshot\n");
+	}
+
+    free(query);
+    return output;
+
+}
+
+static status_t
+exec_shm_snapshot_success(
+		char* status)
+{
+	if (NULL == status) {
+        return VMI_FAILURE;
+    }
+
+    char *ptr = strcasestr(status, "CommandNotFound");
+
+    if (NULL == ptr) {
+		dbprint("--kvm: using snapshot shm support\n");
+        return VMI_SUCCESS;
+    }
+    else {
+		errprint("--kvm: didn't find snapshot shm support\n");
+        return VMI_FAILURE;
+    }
+}
+
+static status_t
+link_mmap_shm_snapshot_dev(
+	    vmi_instance_t vmi)
+{
+    kvm_instance_t *kvm = kvm_get_instance(vmi);
+
+    if ((kvm->shm_snapshot_fd = shm_open(kvm->shm_snapshot_path, O_RDONLY, NULL)) < 0) {
+    	errprint("fail in shm_open %s", kvm->shm_snapshot_path);
+    	return VMI_FAILURE;
+    }
+
+    ftruncate(kvm->shm_snapshot_fd, vmi->size);
+
+    /* try memory mapped file I/O */
+    int mmap_flags = (MAP_PRIVATE | MAP_NORESERVE | MAP_POPULATE);
+
+#ifdef MMAP_HUGETLB // since kernel 2.6.32
+    mmap_flags |= MMAP_HUGETLB;
+#endif // MMAP_HUGETLB
+
+#ifdef MEASUREMENT
+	struct timeval ktv_start;
+	struct timeval ktv_end;
+	long int diff;
+
+	gettimeofday(&ktv_start, 0);
+#endif
+
+	kvm->shm_snapshot_map = mmap(NULL,  // addr
+					 vmi->size,  // len
+                     PROT_READ, // prot
+                     mmap_flags,    // flags
+                     kvm->shm_snapshot_fd,    // file descriptor
+                     (off_t) 0);    // offset
+
+    if (MAP_FAILED == kvm->shm_snapshot_map) {
+        perror("Failed to mmap shm snapshot dev");
+        return VMI_FAILURE;
+    }
+
+#ifdef MEASUREMENT
+
+	gettimeofday(&ktv_end, 0);
+
+	print_measurement(ktv_start, ktv_end, &diff);
+
+	printf("mmap measurement: %ld\n", diff);
+
+#endif
+
+    return VMI_SUCCESS;
+}
+
+static status_t
+munmap_unlink_shm_snapshot_dev(
+	    vmi_instance_t vmi, uint64_t memSize)
+{
+    kvm_instance_t *kvm = kvm_get_instance(vmi);
+
+    if (kvm->shm_snapshot_map) {
+        (void) munmap(kvm->shm_snapshot_map, memSize);
+        kvm->shm_snapshot_map = 0;
+    }
+
+    if (kvm->shm_snapshot_fd) {
+    	shm_unlink(kvm->shm_snapshot_path);
+    	free(kvm->shm_snapshot_path);
+        kvm->shm_snapshot_fd = 0;
+    }
+
+    return VMI_SUCCESS;
+}
+
+/**
+ * kvm_get_memory_snapshot
+ *
+ *  kvm snapshot need not memcpy(), just return valid mmaped address.
+ */
+void *
+kvm_get_memory_shm_snapshot(
+    vmi_instance_t vmi,
+    addr_t paddr,
+    uint32_t length)
+{
+    if (paddr + length > vmi->size) {
+        dbprint
+            ("--%s: request for PA range [0x%.16"PRIx64"-0x%.16"PRIx64"] reads past end of pmemsave file\n",
+             __FUNCTION__, paddr, paddr + length);
+        goto error_noprint;
+    }
+
+
+    kvm_instance_t *ki = kvm_get_instance(vmi);
+    return ki->shm_snapshot_map + paddr;
+
+error_print:
+    dbprint("%s: failed to read %d bytes at "
+            "PA (offset) 0x%.16"PRIx64" [VM size 0x%.16"PRIx64"]\n", __FUNCTION__,
+            length, paddr, vmi->size);
+error_noprint:
+/*    if (memory)
+        free(memory);*/
+    return NULL;
+}
+
+void
+kvm_release_memory_shm_snapshot(
+    void *memory,
+    size_t length)
+{
+// shm snapshot need not free mmaped memory.
+}
+
 void *
 kvm_get_memory_patch(
     vmi_instance_t vmi,
@@ -406,6 +591,42 @@ kvm_init(
     }
     vmi->num_vcpus = info.nrVirtCpu;
 
+    /* get the memory size in advance for
+     *  exec_shm_snapshot() and link_mmap_shm_snapshot_dev() */
+    if (driver_get_memsize(vmi, &vmi->size) == VMI_FAILURE) {
+        errprint("Failed to get memory size.\n");
+        return VMI_FAILURE;
+    }
+    dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", (*vmi)->size,
+            (*vmi)->size);
+
+    kvm_get_instance(vmi)->shm_snapshot_path = NULL;
+    kvm_get_instance(vmi)->shm_snapshot_map = NULL;
+    kvm_get_instance(vmi)->shm_snapshot_cpu_regs = NULL;
+
+    // test and setup KVM SHM snapshot.
+    if (vmi->flags & VMI_INIT_KVM_SHM_SNAPSHOT) {
+    	char *snapshot_status = exec_shm_snapshot(vmi);
+		if (VMI_SUCCESS == exec_shm_snapshot_success(snapshot_status)) {
+
+			// dump cpu registers
+			char *cpu_regs = exec_info_registers(kvm_get_instance(vmi));
+			kvm_get_instance(vmi)->shm_snapshot_cpu_regs = strdup(cpu_regs);
+			free(cpu_regs);
+
+			memory_cache_init(vmi, kvm_get_memory_shm_snapshot, kvm_release_memory_shm_snapshot,
+								  1);
+
+			if (snapshot_status)
+				free (snapshot_status);
+			return link_mmap_shm_snapshot_dev(vmi);
+		} else {
+			if (snapshot_status)
+				free (snapshot_status);
+			return VMI_FAILURE;
+		}
+    }
+
     char *status = exec_memory_access(kvm_get_instance(vmi));
 
     if (VMI_SUCCESS == exec_memory_access_success(status)) {
@@ -431,7 +652,16 @@ void
 kvm_destroy(
     vmi_instance_t vmi)
 {
+    kvm_instance_t *kvm = kvm_get_instance(vmi);
+
     destroy_domain_socket(kvm_get_instance(vmi));
+
+    if (vmi->flags & VMI_INIT_KVM_SHM_SNAPSHOT) {
+    	dbprint("--kvm: teardown KVM SHM snapshot\n");
+    	munmap_unlink_shm_snapshot_dev(vmi, vmi->size);
+    	if (kvm->shm_snapshot_cpu_regs != NULL)
+    		free(kvm->shm_snapshot_cpu_regs);
+    }
 
     if (kvm_get_instance(vmi)->dom) {
         virDomainFree(kvm_get_instance(vmi)->dom);
@@ -603,7 +833,17 @@ kvm_get_vcpureg(
     registers_t reg,
     unsigned long vcpu)
 {
-    char *regs = exec_info_registers(kvm_get_instance(vmi));
+	char *regs = NULL;
+
+	// if we have snapshot configuration, then read from the loaded string.
+	if (kvm_get_instance(vmi)->shm_snapshot_cpu_regs != NULL) {
+		regs = strdup(kvm_get_instance(vmi)->shm_snapshot_cpu_regs);
+		dbprint("read cpu regs from snapshot\n");
+	}
+	else {
+		regs = exec_info_registers(kvm_get_instance(vmi));
+	}
+
     status_t ret = VMI_SUCCESS;
 
     if (VMI_PM_IA32E == vmi->page_mode) {

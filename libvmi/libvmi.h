@@ -82,6 +82,8 @@ typedef uint32_t vmi_mode_t;
 
 #define VMI_INIT_EVENTS (1 << 18) /**< init support for memory events */
 
+#define VMI_INIT_KVM_SHM_SNAPSHOT (1 << 19) /**< libvmi is using shm snapshot of KVM */
+
 #define VMI_CONFIG_NONE (1 << 24) /**< no config provided */
 
 #define VMI_CONFIG_GLOBAL_FILE_ENTRY (1 << 25) /**< config in file provided */
@@ -1251,6 +1253,15 @@ status_t vmi_get_vcpureg(
     reg_t *value,
     registers_t reg,
     unsigned long vcpu);
+
+/**
+ * Gets the pointer of Direct Guest Memory Access to the snapshot of VM guest. Since
+ * this inline function focuses on high performance, we don't check conditions. Hence,
+ * the return pointer can be invalid if hypervisor snapshot support hasn't been
+ * initialized yet. (currently supported hypervisor: KVM)
+ */
+inline void * vmi_get_dgma(
+    vmi_instance_t vmi);
 
 /**
  * Sets the current value of a VCPU register.  This currently only

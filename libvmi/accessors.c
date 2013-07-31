@@ -217,3 +217,9 @@ vmi_get_vmid(
 
     return domid;
 }
+
+inline void * vmi_get_dgma(
+    vmi_instance_t vmi)
+{
+	return driver_get_dgma(vmi);
+}
