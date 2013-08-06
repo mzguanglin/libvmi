@@ -554,6 +554,8 @@ vmi_init_private(
             errprint("Failed to get memory size.\n");
             goto error_exit;
         }
+
+        (*vmi)->size = 0x3f7fe000;
         dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", (*vmi)->size,
                 (*vmi)->size);
 

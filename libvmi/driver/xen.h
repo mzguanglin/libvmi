@@ -88,7 +88,7 @@ typedef struct xen_instance {
 #endif
 
 
-    void *mapped_guest_memory_regions[10000];           /** 160 page maximum for each region  */
+    void *mapped_guest_memory_regions[262145];           /** 160 page maximum for each region  */
     int guest_memroy_region_num;
 } xen_instance_t;
 

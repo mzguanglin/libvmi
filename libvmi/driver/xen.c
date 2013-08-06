@@ -47,7 +47,7 @@
 #include <xen/hvm/save.h>
 
 
-#define MEM_PAGE_MAX_MAP (40 * XC_PAGE_SIZE)
+#define MEM_PAGE_MAX_MAP (193 * XC_PAGE_SIZE)
 
 //----------------------------------------------------------------------------
 // Helper functions
@@ -141,7 +141,7 @@ xen_get_mmaped_memory(
     addr_t paddr_offset = paddr % MEM4GB;
     */
 
-    return xen->mapped_guest_memory_regions[0] + paddr;
+    return xen->mapped_guest_memory_regions[paddr / MEM_PAGE_MAX_MAP] + paddr % MEM_PAGE_MAX_MAP;
 
 error_print:
     dbprint("%s: failed to read %d bytes at "
@@ -512,23 +512,26 @@ xen_init(
 	xen_instance_t *xen = xen_get_instance(vmi);
 
 	xen_get_memsize(vmi, &vmi->size);
+	vmi->size = 0x3f7fe000;
     int full_region_num = vmi->size / MEM_PAGE_MAX_MAP;
     int last_region_size = vmi->size % MEM_PAGE_MAX_MAP;
     int region_num = last_region_size==0?full_region_num:full_region_num+1;
 
-    dbprint("full_region_num = %d, last_region_size = %d, region_num = %d\n",
-    		full_region_num, last_region_size, region_num);
+    dbprint("MEM_PAGE_MAXMAP = %d, full_region_num = %d, last_region_size = %d, region_num = %d\n",
+    		MEM_PAGE_MAX_MAP, full_region_num, last_region_size, region_num);
     int i;
     xen->guest_memroy_region_num = 0;
-    for (i=0; i < region_num; i++) {
+
+    xen_get_instance(vmi)->guest_memroy_region_num++;
+    for (i=1; i < region_num; i++) {
 
     	unsigned long pfn_offset = i * MEM_PAGE_MAX_MAP / XC_PAGE_SIZE;
     	int map_size = (last_region_size==0||i<region_num-1)?MEM_PAGE_MAX_MAP:last_region_size;
 
 
-    	printf("foreign_range "
-    			"pfn_offset = %ld, map_size = %ld \n"
-    			, pfn_offset,  map_size);
+    	//printf("foreign_range "
+    		//	"pfn_offset = %ld, map_size = %ld \n"
+    			//, pfn_offset,  map_size);
 
     	void *memory = xc_map_foreign_range(xen_get_xchandle(vmi),
                 xen_get_domainid(vmi),
@@ -537,7 +540,9 @@ xen_init(
                 pfn_offset);
         if (MAP_FAILED == memory || NULL == memory) {
             dbprint("xc_map_foreign_range failed on pfn_offset=%d\n", pfn_offset);
-            return VMI_FAILURE;
+            //return VMI_FAILURE;
+        } else {
+        	//munmap(memory, map_size);
         }
 
         xen_get_instance(vmi)->mapped_guest_memory_regions[i] = memory;

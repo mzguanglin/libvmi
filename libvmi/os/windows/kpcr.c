@@ -826,7 +826,7 @@ find_kdversionblock_address_fast(
         find_ofs = 0x8;
     }   // if-else
 
-    for (block_pa = 4096; block_pa + BLOCK_SIZE <= memsize; block_pa += BLOCK_SIZE) {
+    for (block_pa = 0xC1000; block_pa + BLOCK_SIZE <= memsize; block_pa += BLOCK_SIZE) {
         read = vmi_read_pa(vmi, block_pa, haystack, BLOCK_SIZE);
         if (BLOCK_SIZE != read) {
             continue;
