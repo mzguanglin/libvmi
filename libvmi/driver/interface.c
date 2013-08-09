@@ -91,6 +91,11 @@ struct driver_instance {
     *read_page_ptr) (
     vmi_instance_t,
     addr_t);
+    void *(
+    *read_mem_ptr) (
+    vmi_instance_t,
+    addr_t,
+    uint32_t);
     status_t (
     *write_ptr) (
     vmi_instance_t,
@@ -189,6 +194,7 @@ driver_kvm_setup(
     instance->set_vcpureg_ptr = NULL;
     instance->get_address_width_ptr = NULL;
     instance->read_page_ptr = &kvm_read_page;
+    instance->read_mem_ptr = &kvm_read_mem;
     instance->write_ptr = &kvm_write;
     instance->is_pv_ptr = &kvm_is_pv;
     instance->pause_vm_ptr = &kvm_pause_vm;
@@ -564,6 +570,24 @@ driver_read_page(
     else {
         dbprint
             ("WARNING: driver_read_page function not implemented.\n");
+        return NULL;
+    }
+}
+
+void *
+driver_read_mem(
+    vmi_instance_t vmi,
+    addr_t paddr,
+    uint32_t length)
+{
+    driver_instance_t ptrs = driver_get_instance(vmi);
+
+    if (NULL != ptrs && NULL != ptrs->read_mem_ptr) {
+        return ptrs->read_mem_ptr(vmi, paddr, length);
+    }
+    else {
+        dbprint
+            ("WARNING: driver_read_mem function not implemented.\n");
         return NULL;
     }
 }

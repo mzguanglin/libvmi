@@ -54,6 +54,16 @@ vmi_read_pa(
     addr_t offset = 0;
     size_t buf_offset = 0;
 
+//#define READ_GRANULARITY
+    #ifdef READ_GRANULARITY
+        addr_t map_mem = driver_read_mem(vmi, paddr, count);;
+        memory = map_mem;
+        memcpy(((char *) buf), map_mem, count);
+        return count;
+
+    #else
+
+
     while (count > 0) {
         size_t read_len = 0;
 
@@ -84,6 +94,7 @@ vmi_read_pa(
     }
 
     return buf_offset;
+#endif
 }
 
 size_t

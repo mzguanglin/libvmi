@@ -59,6 +59,23 @@ struct request {
 //----------------------------------------------------------------------------
 // Helper functions
 
+void print_measurement(
+    struct timeval ktv_start,
+    struct timeval ktv_end,
+    long int *diff)
+{
+    *diff =
+        (((long int) ktv_end.tv_usec - (long int) ktv_start.tv_usec) +
+          (((long int) ktv_end.tv_sec % 1000000 -
+             (long int) ktv_start.tv_sec % 1000000) * 1000000));
+    printf("%ld.%.6ld : %ld.%.6ld : %ld\n",
+              ((long int) ktv_start.tv_sec) % 1000000,
+              (long int) ktv_start.tv_usec,
+              ((long int) ktv_end.tv_sec) % 1000000,
+              (long int) ktv_end.tv_usec, *diff);
+}
+
+
 //
 // QMP Command Interactions
 static char *
@@ -259,7 +276,7 @@ exec_shm_snapshot(
 	if (VMI_FAILURE == vmi_pause_vm(vmi)) {
 		warnprint("fail to pause VM before snapshot, might cause in-consistant state\n");
 	}
-
+#define MEASUREMENT
 #ifdef MEASUREMENT
 	struct timeval ktv_start;
 	struct timeval ktv_end;
@@ -597,8 +614,8 @@ kvm_init(
         errprint("Failed to get memory size.\n");
         return VMI_FAILURE;
     }
-    dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", (*vmi)->size,
-            (*vmi)->size);
+    dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", vmi->size,
+            vmi->size);
 
     kvm_get_instance(vmi)->shm_snapshot_path = NULL;
     kvm_get_instance(vmi)->shm_snapshot_map = NULL;
@@ -1026,6 +1043,15 @@ kvm_read_page(
     return memory_cache_insert(vmi, paddr);
 }
 
+void *
+kvm_read_mem(
+	    vmi_instance_t vmi,
+	    addr_t paddr,
+	    uint32_t length)
+{
+	return kvm_get_memory_shm_snapshot(vmi, paddr, length);
+}
+
 status_t
 kvm_write(
     vmi_instance_t vmi,
@@ -1181,6 +1207,15 @@ kvm_read_page(
     addr_t page)
 {
     return NULL;
+}
+
+void *
+kvm_read_mem(
+	    vmi_instance_t vmi,
+	    addr_t paddr,
+	    uint32_t length)
+{
+	return NULL;
 }
 
 status_t

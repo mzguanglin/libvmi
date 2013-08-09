@@ -75,6 +75,10 @@ status_t xen_get_address_width(
 void *driver_read_page(
     vmi_instance_t vmi,
     addr_t page);
+void *driver_read_mem(
+    vmi_instance_t vmi,
+    addr_t paddr,
+    uint32_t length);
 status_t driver_write(
     vmi_instance_t vmi,
     addr_t paddr,

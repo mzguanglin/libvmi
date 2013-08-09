@@ -88,6 +88,10 @@ addr_t kvm_pfn_to_mfn(
 void *kvm_read_page(
     vmi_instance_t vmi,
     addr_t page);
+void *kvm_read_mem(
+	    vmi_instance_t vmi,
+	    addr_t paddr,
+	    uint32_t length);
 status_t kvm_write(
     vmi_instance_t vmi,
     addr_t paddr,
