@@ -239,7 +239,7 @@ kvm_get_instance(
 
 
 static char *
-exec_shm_snapshot(
+exec_shared_memory_snapshot(
 	    vmi_instance_t vmi)
 {
 	kvm_instance_t *kvm = kvm_get_instance(vmi);
@@ -250,15 +250,8 @@ exec_shm_snapshot(
     sprintf(query, "'{\"execute\": \"snapshot\", \"arguments\": {"
     		" \"size\": %ld, \"filename\": \"/%s\"}}'", vmi->size,
     		tmpfile);
-    kvm->shm_snapshot_path = strdup(tmpfile);
+    kvm->shared_memory_snapshot_path = strdup(tmpfile);
     free(tmpfile);
-
-
-	dbprint("--kvm: testing shm snapshot support\n");
-
-	if (VMI_FAILURE == vmi_pause_vm(vmi)) {
-		warnprint("fail to pause VM before snapshot, might cause in-consistant state\n");
-	}
 
 #ifdef MEASUREMENT
 	struct timeval ktv_start;
@@ -280,17 +273,13 @@ exec_shm_snapshot(
 
 #endif
 
-	if (VMI_FAILURE == vmi_resume_vm(vmi)) {
-		warnprint("fail to resume VM after snapshot\n");
-	}
-
     free(query);
     return output;
 
 }
 
 static status_t
-exec_shm_snapshot_success(
+exec_shared_memory_snapshot_success(
 		char* status)
 {
 	if (NULL == status) {
@@ -300,27 +289,27 @@ exec_shm_snapshot_success(
     char *ptr = strcasestr(status, "CommandNotFound");
 
     if (NULL == ptr) {
-		dbprint("--kvm: using snapshot shm support\n");
+		dbprint("--kvm: using snapshot shared memory support\n");
         return VMI_SUCCESS;
     }
     else {
-		errprint("--kvm: didn't find snapshot shm support\n");
+		errprint("--kvm: didn't find snapshot shared memory support\n");
         return VMI_FAILURE;
     }
 }
 
 static status_t
-link_mmap_shm_snapshot_dev(
+link_mmap_shared_memory_snapshot_dev(
 	    vmi_instance_t vmi)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    if ((kvm->shm_snapshot_fd = shm_open(kvm->shm_snapshot_path, O_RDONLY, NULL)) < 0) {
-    	errprint("fail in shm_open %s", kvm->shm_snapshot_path);
+    if ((kvm->shared_memory_snapshot_fd = shm_open(kvm->shared_memory_snapshot_path, O_RDONLY, NULL)) < 0) {
+    	errprint("fail in shm_open %s", kvm->shared_memory_snapshot_path);
     	return VMI_FAILURE;
     }
 
-    ftruncate(kvm->shm_snapshot_fd, vmi->size);
+    ftruncate(kvm->shared_memory_snapshot_fd, vmi->size);
 
     /* try memory mapped file I/O */
     int mmap_flags = (MAP_PRIVATE | MAP_NORESERVE | MAP_POPULATE);
@@ -337,15 +326,15 @@ link_mmap_shm_snapshot_dev(
 	gettimeofday(&ktv_start, 0);
 #endif
 
-	kvm->shm_snapshot_map = mmap(NULL,  // addr
+	kvm->shared_memory_snapshot_map = mmap(NULL,  // addr
 					 vmi->size,  // len
                      PROT_READ, // prot
                      mmap_flags,    // flags
-                     kvm->shm_snapshot_fd,    // file descriptor
+                     kvm->shared_memory_snapshot_fd,    // file descriptor
                      (off_t) 0);    // offset
 
-    if (MAP_FAILED == kvm->shm_snapshot_map) {
-        perror("Failed to mmap shm snapshot dev");
+    if (MAP_FAILED == kvm->shared_memory_snapshot_map) {
+        perror("Failed to mmap shared memory snapshot dev");
         return VMI_FAILURE;
     }
 
@@ -363,63 +352,65 @@ link_mmap_shm_snapshot_dev(
 }
 
 static status_t
-munmap_unlink_shm_snapshot_dev(
-	    vmi_instance_t vmi, uint64_t memSize)
+munmap_unlink_shared_memory_snapshot_dev(
+	    vmi_instance_t vmi, uint64_t mem_size)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    if (kvm->shm_snapshot_map) {
-        (void) munmap(kvm->shm_snapshot_map, memSize);
-        kvm->shm_snapshot_map = 0;
+    if (kvm->shared_memory_snapshot_map) {
+        (void) munmap(kvm->shared_memory_snapshot_map, mem_size);
+        kvm->shared_memory_snapshot_map = 0;
     }
 
-    if (kvm->shm_snapshot_fd) {
-    	shm_unlink(kvm->shm_snapshot_path);
-    	free(kvm->shm_snapshot_path);
-        kvm->shm_snapshot_fd = 0;
+    if (kvm->shared_memory_snapshot_fd) {
+    	shm_unlink(kvm->shared_memory_snapshot_path);
+    	free(kvm->shared_memory_snapshot_path);
+        kvm->shared_memory_snapshot_fd = 0;
     }
 
     return VMI_SUCCESS;
 }
 
 /**
- * kvm_get_memory_snapshot
+ * kvm_get_memory_shared_memory_snapshot
  *
- *  kvm snapshot need not memcpy(), just return valid mmaped address.
+ *  kvm shared memory snapshot driver need not memcpy(), just return valid mapped address.
  */
 void *
-kvm_get_memory_shm_snapshot(
+kvm_get_memory_shared_memory_snapshot(
     vmi_instance_t vmi,
     addr_t paddr,
     uint32_t length)
 {
     if (paddr + length > vmi->size) {
         dbprint
-            ("--%s: request for PA range [0x%.16"PRIx64"-0x%.16"PRIx64"] reads past end of pmemsave file\n",
+            ("--%s: request for PA range [0x%.16"PRIx64"-0x%.16"PRIx64"] reads past end of shared memory snapshot\n",
              __FUNCTION__, paddr, paddr + length);
         goto error_noprint;
     }
 
-
-    kvm_instance_t *ki = kvm_get_instance(vmi);
-    return ki->shm_snapshot_map + paddr;
+    kvm_instance_t *kvm = kvm_get_instance(vmi);
+    return kvm->shared_memory_snapshot_map + paddr;
 
 error_print:
     dbprint("%s: failed to read %d bytes at "
             "PA (offset) 0x%.16"PRIx64" [VM size 0x%.16"PRIx64"]\n", __FUNCTION__,
             length, paddr, vmi->size);
 error_noprint:
-/*    if (memory)
-        free(memory);*/
     return NULL;
 }
 
+/**
+ * kvm_release_memory_shared_memory_snapshot
+ *
+ *  since kvm_get_memory_shared_memory_snapshot() didn't copy memory contents to a temporary buffer,
+ *	shared snapshot need not free memory.
+ */
 void
-kvm_release_memory_shm_snapshot(
+kvm_release_memory_shared_memory_snapshot(
     void *memory,
     size_t length)
 {
-// shm snapshot need not free mmaped memory.
 }
 
 void *
@@ -600,26 +591,26 @@ kvm_init(
     dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", (*vmi)->size,
             (*vmi)->size);
 
-    kvm_get_instance(vmi)->shm_snapshot_path = NULL;
-    kvm_get_instance(vmi)->shm_snapshot_map = NULL;
-    kvm_get_instance(vmi)->shm_snapshot_cpu_regs = NULL;
+    kvm_get_instance(vmi)->shared_memory_snapshot_path = NULL;
+    kvm_get_instance(vmi)->shared_memory_snapshot_map = NULL;
+    kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs = NULL;
 
-    // test and setup KVM SHM snapshot.
-    if (vmi->flags & VMI_INIT_KVM_SHM_SNAPSHOT) {
-    	char *snapshot_status = exec_shm_snapshot(vmi);
-		if (VMI_SUCCESS == exec_shm_snapshot_success(snapshot_status)) {
+    // test and setup KVM shared memory snapshot.
+    if (vmi->flags & VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT) {
+    	char *snapshot_status = exec_shared_memory_snapshot(vmi);
+		if (VMI_SUCCESS == exec_shared_memory_snapshot_success(snapshot_status)) {
 
 			// dump cpu registers
 			char *cpu_regs = exec_info_registers(kvm_get_instance(vmi));
-			kvm_get_instance(vmi)->shm_snapshot_cpu_regs = strdup(cpu_regs);
+			kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs = strdup(cpu_regs);
 			free(cpu_regs);
 
-			memory_cache_init(vmi, kvm_get_memory_shm_snapshot, kvm_release_memory_shm_snapshot,
+			memory_cache_init(vmi, kvm_get_memory_shared_memory_snapshot, kvm_release_memory_shared_memory_snapshot,
 								  1);
 
 			if (snapshot_status)
 				free (snapshot_status);
-			return link_mmap_shm_snapshot_dev(vmi);
+			return link_mmap_shared_memory_snapshot_dev(vmi);
 		} else {
 			if (snapshot_status)
 				free (snapshot_status);
@@ -656,11 +647,11 @@ kvm_destroy(
 
     destroy_domain_socket(kvm_get_instance(vmi));
 
-    if (vmi->flags & VMI_INIT_KVM_SHM_SNAPSHOT) {
-    	dbprint("--kvm: teardown KVM SHM snapshot\n");
-    	munmap_unlink_shm_snapshot_dev(vmi, vmi->size);
-    	if (kvm->shm_snapshot_cpu_regs != NULL)
-    		free(kvm->shm_snapshot_cpu_regs);
+    if (vmi->flags & VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT) {
+    	dbprint("--kvm: teardown KVM shared memory snapshot\n");
+    	munmap_unlink_shared_memory_snapshot_dev(vmi, vmi->size);
+    	if (kvm->shared_memory_snapshot_cpu_regs != NULL)
+    		free(kvm->shared_memory_snapshot_cpu_regs);
     }
 
     if (kvm_get_instance(vmi)->dom) {
@@ -836,8 +827,8 @@ kvm_get_vcpureg(
 	char *regs = NULL;
 
 	// if we have snapshot configuration, then read from the loaded string.
-	if (kvm_get_instance(vmi)->shm_snapshot_cpu_regs != NULL) {
-		regs = strdup(kvm_get_instance(vmi)->shm_snapshot_cpu_regs);
+	if (kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs != NULL) {
+		regs = strdup(kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs);
 		dbprint("read cpu regs from snapshot\n");
 	}
 	else {

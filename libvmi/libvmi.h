@@ -82,7 +82,7 @@ typedef uint32_t vmi_mode_t;
 
 #define VMI_INIT_EVENTS (1 << 18) /**< init support for memory events */
 
-#define VMI_INIT_KVM_SHM_SNAPSHOT (1 << 19) /**< libvmi is using shm snapshot of KVM */
+#define VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT (1 << 19) /**< make a KVM shared memory snapshot in vmi_init() */
 
 #define VMI_CONFIG_NONE (1 << 24) /**< no config provided */
 
