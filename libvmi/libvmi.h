@@ -1255,15 +1255,6 @@ status_t vmi_get_vcpureg(
     unsigned long vcpu);
 
 /**
- * Gets the pointer of Direct Guest Memory Access to the snapshot of VM guest. Since
- * this inline function focuses on high performance, we don't check conditions. Hence,
- * the return pointer can be invalid if hypervisor snapshot support hasn't been
- * initialized yet. (currently supported hypervisor: KVM)
- */
-inline void * vmi_get_dgma(
-    vmi_instance_t vmi);
-
-/**
  * Sets the current value of a VCPU register.  This currently only
  * supports control registers.  When LibVMI is accessing a raw
  * memory file, this function will fail. Operating upon an unpaused

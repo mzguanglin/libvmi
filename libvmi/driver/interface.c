@@ -715,10 +715,3 @@ status_t driver_shutdown_single_step(
         return VMI_FAILURE;
     }
 }
-
-inline void * driver_get_dgma(
-    vmi_instance_t vmi)
-{
-	// Currently KVM is the only driver that defines Direct Guest Memory Access.
-	return ((kvm_instance_t*)vmi->driver)->shm_snapshot_map;
-}
