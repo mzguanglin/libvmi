@@ -142,6 +142,37 @@ introspection.  For KVM support you need to do the following:
   should both enable GDB and ensure that QEMU-KVM does not have the
   LibVMI patch.
 
+Shared Memory Snapshot Support
+------------------------------
+(Don't mix up with VM snapshot file) This technique will provide a very 
+fast and coherent memory access, except the creation of snapshot can take
+0.2 ~ 1.4 seconds when the memory size of guest VM expands from 512MB to 
+3GB. This technique is currently for KVM only, we are going to support Xen
+later. If you would like LibVMI to work on a shared memory snapshot, then 
+you need to do the following:
+
+- Ensure that your libvirt installation supports QMP commands.
+
+- Patch QEMU-KVM with the provided shared memroy snapshot patch. Please 
+  follow the instructions in the libvmi/tools/qemu-kvm-patch directory.
+  
+- ./configure --enable-snapshot
+
+- Choose a setup method :
+  1) Add VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT flag to vmi_int(), then
+     vmi_init() will create a snapshot and enter snapshot mode automatically.
+     Once LibVMI enters the snapshot mode, memory access will be redirect to 
+     the shared memory snapshot, rather than your live guest VM.
+  
+  2) After the vmi_init() has been called, invoke vmi_snapshot_create(vmi)
+     to snaphsot your guest VM and enter snapshot mode.
+  
+  No matter which method you choose, you can turn LibVMI back to live mode 
+  by calling vmi_snapshot_destroy(vmi).
+  
+  Even if you didn't call vmi_snapshot_destroy(vmi), vmi_destroy(vmi) will 
+  teardown the shared memory snapshot if existed.
+
 
 File / Snapshot Support
 -----------------------

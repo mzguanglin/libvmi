@@ -1171,6 +1171,7 @@ status_t
 kvm_create_snapshot(
     vmi_instance_t vmi)
 {
+	// teardown the old snapshot if existed.
     if (VMI_SUCCESS == test_using_snapshot(kvm_get_instance(vmi))) {
     	kvm_teardown_snapshot_mode(vmi);
     }
