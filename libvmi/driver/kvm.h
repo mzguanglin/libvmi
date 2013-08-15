@@ -36,10 +36,12 @@ typedef struct kvm_instance {
     char *ds_path;
     int socket_fd;
 
+#if ENABLE_SNAPSHOT == 1
     char *shared_memory_snapshot_path;  /** shared memory snapshot device path in /dev/shm directory */
     int   shared_memory_snapshot_fd;    /** file description of the shared memory snapshot device */
     void *shared_memory_snapshot_map;   /** mapped shared memory region */
     char *shared_memory_snapshot_cpu_regs;  /** string of dumped CPU registers */
+#endif
 } kvm_instance_t;
 
 #else
@@ -102,7 +104,9 @@ status_t kvm_pause_vm(
     vmi_instance_t vmi);
 status_t kvm_resume_vm(
     vmi_instance_t vmi);
+#if ENABLE_SNAPSHOT == 1
 status_t kvm_create_snapshot(
     vmi_instance_t vmi);
 status_t kvm_destroy_snapshot(
     vmi_instance_t vmi);
+#endif

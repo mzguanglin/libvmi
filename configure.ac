@@ -65,6 +65,13 @@ AC_ARG_ENABLE([kvm],
       [enable_kvm=yes])
 AM_CONDITIONAL([KVM], [test x$enable_kvm = xyes])
 
+AC_ARG_ENABLE([snapshot],
+      [AS_HELP_STRING([--disable-snapshot],
+         [Support shared memory snapshot with KVM VMs (Xen is pending) (default is no)])],
+      [enable_snapshot=$enableval],
+      [enable_snapshot=no])
+AM_CONDITIONAL([KVM], [test x$enable_snapshot = xyes])
+
 AC_ARG_ENABLE([file],
       [AS_HELP_STRING([--disable-file],
          [Support memory introspection with physical memory dumps in a file (default is yes)])],
@@ -208,6 +215,15 @@ kvm_space='      '
     [fi]
 [fi]
 
+have_snapshot='no'
+snapshot_space=' '
+[if test "$enable_snapshot" = "yes"]
+[then]
+    AC_DEFINE([ENABLE_SNAPSHOT], [1], [Define to 1 to enable snapshot support.])
+    snapshot_space=''
+    have_snapshot='yes'
+[fi]
+
 have_file='no'
 file_space='      '
 [if test "$enable_file" = "yes"]
@@ -301,6 +317,7 @@ Feature      | Option                  | Reason
 Xen Support  | --enable-xen=$enable_xen$xen_space   | $have_xen
 Xen Events   | --enable-xen-events=$enable_xen_events$xen_event_space | $have_xen_events
 KVM Support  | --enable-kvm=$enable_kvm$kvm_space   | $have_kvm
+Snapshot     | --enable-snapshot=$enable_snapshot$snapshot_space   | $have_snapshot
 File Support | --enable-file=$enable_file$file_space  | $have_file
 -------------|-------------------------|----------------------------
 

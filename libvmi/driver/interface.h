@@ -86,10 +86,12 @@ status_t driver_pause_vm(
     vmi_instance_t vmi);
 status_t driver_resume_vm(
     vmi_instance_t vmi);
+#if ENABLE_SNAPSHOT == 1
 status_t driver_snapshot_vm(
     vmi_instance_t vmi);
 status_t driver_destroy_snapshot_vm(
     vmi_instance_t vmi);
+#endif
 status_t driver_events_listen(
     vmi_instance_t vmi,
     uint32_t timeout);

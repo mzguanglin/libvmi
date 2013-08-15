@@ -248,6 +248,7 @@ kvm_get_instance(
     return ((kvm_instance_t *) vmi->driver);
 }
 
+#if ENABLE_SNAPSHOT == 1
 status_t
 test_using_snapshot(
 		kvm_instance_t *kvm)
@@ -494,6 +495,7 @@ kvm_teardown_snapshot_mode(
     }
     return VMI_SUCCESS;
 }
+#endif
 
 void *
 kvm_get_memory_patch(
@@ -706,6 +708,7 @@ kvm_init(
     }
     vmi->num_vcpus = info.nrVirtCpu;
 
+#if ENABLE_SNAPSHOT == 1
     /* get the memory size in advance for
      *  exec_shm_snapshot() and link_mmap_shm_snapshot_dev() */
     if (driver_get_memsize(vmi, &vmi->size) == VMI_FAILURE) {
@@ -715,9 +718,12 @@ kvm_init(
     dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", (*vmi)->size,
             (*vmi)->size);
 
+
     if (vmi->flags & VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT) {
     	return kvm_create_snapshot(vmi);
-    } else {
+    } else
+#endif
+    {
     	return kvm_setup_live_mode(vmi);
     }
 }
@@ -730,9 +736,11 @@ kvm_destroy(
 
     destroy_domain_socket(kvm_get_instance(vmi));
 
+#if ENABLE_SNAPSHOT == 1
     if (vmi->flags & VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT) {
     	kvm_teardown_snapshot_mode(vmi);
     }
+#endif
 
     if (kvm_get_instance(vmi)->dom) {
         virDomainFree(kvm_get_instance(vmi)->dom);
@@ -906,12 +914,15 @@ kvm_get_vcpureg(
 {
 	char *regs = NULL;
 
+#if ENABLE_SNAPSHOT == 1
 	// if we have snapshot configuration, then read from the loaded string.
 	if (kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs != NULL) {
 		regs = strdup(kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs);
 		dbprint("read cpu regs from snapshot\n");
 	}
-	else {
+	else
+#endif
+	{
 		regs = exec_info_registers(kvm_get_instance(vmi));
 	}
 
@@ -1155,8 +1166,7 @@ kvm_resume_vm(
     return VMI_SUCCESS;
 }
 
-
-
+#if ENABLE_SNAPSHOT == 1
 status_t
 kvm_create_snapshot(
     vmi_instance_t vmi)
@@ -1168,7 +1178,6 @@ kvm_create_snapshot(
     return kvm_setup_snapshot_mode(vmi);
 }
 
-
 status_t
 kvm_destroy_snapshot(
     vmi_instance_t vmi)
@@ -1177,7 +1186,7 @@ kvm_destroy_snapshot(
 
 	return kvm_setup_live_mode(vmi);
 }
-
+#endif
 
 //////////////////////////////////////////////////////////////////////
 #else
@@ -1317,6 +1326,7 @@ kvm_resume_vm(
     return VMI_FAILURE;
 }
 
+#if ENABLE_SNAPSHOT == 1
 status_t
 kvm_create_snapshot(
     vmi_instance_t vmi)
@@ -1330,5 +1340,6 @@ kvm_destroy_snapshot(
 {
     return VMI_FAILURE;
 }
+#endif
 
 #endif /* ENABLE_KVM */

@@ -189,6 +189,7 @@ vmi_resume_vm(
     return driver_resume_vm(vmi);
 }
 
+#if ENABLE_SNAPSHOT == 1
 status_t
 vmi_snapshot_create(
 		vmi_instance_t vmi)
@@ -202,6 +203,7 @@ vmi_snapshot_destroy(
 {
 	return driver_destroy_snapshot_vm(vmi);
 }
+#endif
 
 char *
 vmi_get_name(

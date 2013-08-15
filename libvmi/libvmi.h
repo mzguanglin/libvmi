@@ -82,7 +82,9 @@ typedef uint32_t vmi_mode_t;
 
 #define VMI_INIT_EVENTS (1 << 18) /**< init support for memory events */
 
+#if ENABLE_SNAPSHOT == 1
 #define VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT (1 << 19) /**< make a KVM shared memory snapshot in vmi_init() */
+#endif
 
 #define VMI_CONFIG_NONE (1 << 24) /**< no config provided */
 
@@ -1292,6 +1294,7 @@ status_t vmi_pause_vm(
 status_t vmi_resume_vm(
     vmi_instance_t vmi);
 
+#if ENABLE_SNAPSHOT == 1
 /**
  * Create a shared memory snapshot and enter "snapshot" mode.
  *  (KVM only, Xen support is pending.)
@@ -1319,6 +1322,7 @@ status_t vmi_snapshot_create(
  */
 status_t vmi_snapshot_destroy(
 		vmi_instance_t vmi);
+#endif
 
 /**
  * Removes all entries from LibVMI's internal virtual to physical address

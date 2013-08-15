@@ -199,8 +199,10 @@ driver_kvm_setup(
     instance->is_pv_ptr = &kvm_is_pv;
     instance->pause_vm_ptr = &kvm_pause_vm;
     instance->resume_vm_ptr = &kvm_resume_vm;
+#if ENABLE_SNAPSHOT == 1
 	instance->create_snapshot_ptr = &kvm_create_snapshot;
 	instance->destroy_snapshot_ptr = &kvm_destroy_snapshot;
+#endif
     instance->events_listen_ptr = NULL;
     instance->set_reg_access_ptr = NULL;
     instance->set_mem_access_ptr = NULL;
@@ -640,6 +642,7 @@ driver_resume_vm(
     }
 }
 
+#if ENABLE_SNAPSHOT == 1
 status_t driver_snapshot_vm(
     vmi_instance_t vmi)
 {
@@ -667,6 +670,7 @@ status_t driver_destroy_snapshot_vm(
         return VMI_FAILURE;
     }
 }
+#endif
 
 status_t driver_events_listen(
     vmi_instance_t vmi,
