@@ -276,9 +276,8 @@ exec_shared_memory_snapshot(
     char *tmpfile = tempnam("/", (char *) virDomainGetName(kvm->dom));
     char *query = (char *) safe_malloc(256);
 
-    sprintf(query, "'{\"execute\": \"snapshot\", \"arguments\": {"
-    		" \"size\": %ld, \"filename\": \"/%s\"}}'", vmi->size,
-    		tmpfile);
+    sprintf(query, "'{\"execute\": \"snapshot-create\", \"arguments\": {"
+    		" \"filename\": \"/%s\"}}'", tmpfile);
     kvm->shared_memory_snapshot_path = strdup(tmpfile);
     free(tmpfile);
 
@@ -710,7 +709,7 @@ kvm_init(
 
 #if ENABLE_SNAPSHOT == 1
     /* get the memory size in advance for
-     *  exec_shm_snapshot() and link_mmap_shm_snapshot_dev() */
+     *  link_mmap_shared_memory_snapshot() */
     if (driver_get_memsize(vmi, &vmi->size) == VMI_FAILURE) {
         errprint("Failed to get memory size.\n");
         return VMI_FAILURE;

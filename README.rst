@@ -153,8 +153,11 @@ you need to do the following:
 
 - Ensure that your libvirt installation supports QMP commands.
 
-- Patch QEMU-KVM with the provided shared memroy snapshot patch. Please 
-  follow the instructions in the libvmi/tools/qemu-kvm-patch directory.
+- Patch QEMU-KVM with the provided shared memroy snapshot patch.  
+  cd qemu-1.6
+  patch -p1 < [libvmi_dir]/tools/qemu-kvm-patch/kvm-physmem-access-physmem-snapshot_1.6.0.patch
+  make
+  make install
   
 - ./configure --enable-snapshot
 
