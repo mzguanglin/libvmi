@@ -1293,6 +1293,34 @@ status_t vmi_resume_vm(
     vmi_instance_t vmi);
 
 /**
+ * Create a shared memory snapshot and enter "snapshot" mode.
+ *  (KVM only, Xen support is pending.)
+ *  (This API requires a patch to KVM.)
+ * If LibVMI is in "live" mode (i.e. KVM patch or KVM native), this will
+ * switch it to "snapshot" mode; If LibVMI is already in "snapshot" mode,
+ * this will destroy the old snapshot and create a new one.
+ *
+ * @param[in] vmi LibVMI instance
+ * @return VMI_SUCCESS or VMI_FAILURE
+ */
+status_t vmi_snapshot_create(
+		vmi_instance_t vmi);
+
+/**
+ * Destroy existed shared memory snapshot and exit "snapshot" mode.
+ *  (KVM only, Xen support is pending.)
+ *  (This API requires a patch to KVM.)
+ * If LibVMI is in "snapshot", this API will switch it to "live" mode
+ * (i.e. KVM patch or KVM native); if LibVMI is already in "live" mode,
+ * this API does nothing.
+ *
+ * @param[in] vmi LibVMI instance
+ * @return VMI_SUCCESS or VMI_FAILURE
+ */
+status_t vmi_snapshot_destroy(
+		vmi_instance_t vmi);
+
+/**
  * Removes all entries from LibVMI's internal virtual to physical address
  * cache.  This is generally only useful if you believe that an entry in
  * the cache is incorrect, or out of date.

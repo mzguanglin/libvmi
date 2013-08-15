@@ -102,3 +102,7 @@ status_t kvm_pause_vm(
     vmi_instance_t vmi);
 status_t kvm_resume_vm(
     vmi_instance_t vmi);
+status_t kvm_create_snapshot(
+    vmi_instance_t vmi);
+status_t kvm_destroy_snapshot(
+    vmi_instance_t vmi);

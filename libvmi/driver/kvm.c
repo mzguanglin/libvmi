@@ -182,6 +182,17 @@ exec_memory_access_success(
     }
 }
 
+inline status_t
+test_using_kvm_patch(
+	    kvm_instance_t *kvm)
+{
+    if (kvm->socket_fd) {
+    	return VMI_SUCCESS;
+    } else {
+    	return VMI_FAILURE;
+    }
+}
+
 //
 // Domain socket interactions (for memory access from KVM-QEMU)
 static status_t
@@ -217,7 +228,7 @@ static void
 destroy_domain_socket(
     kvm_instance_t *kvm)
 {
-    if (kvm->socket_fd) {
+    if (VMI_SUCCESS == test_using_kvm_patch(kvm)) {
         struct request req;
 
         req.type = 0;   // quit
@@ -237,7 +248,24 @@ kvm_get_instance(
     return ((kvm_instance_t *) vmi->driver);
 }
 
+status_t
+test_using_snapshot(
+		kvm_instance_t *kvm)
+{
 
+	if (kvm->shared_memory_snapshot_path != NULL && kvm->shared_memory_snapshot_fd != NULL
+			&& kvm->shared_memory_snapshot_map != NULL && kvm->shared_memory_snapshot_cpu_regs != NULL) {
+		dbprint("is using snapshot\n");
+		return VMI_SUCCESS;
+	} else {
+		dbprint("is not using snapshot\n");
+		return VMI_FAILURE;
+	}
+}
+
+/*
+ * set kvm->shared_memory_snapshot_path;
+ */
 static char *
 exec_shared_memory_snapshot(
 	    vmi_instance_t vmi)
@@ -289,15 +317,19 @@ exec_shared_memory_snapshot_success(
     char *ptr = strcasestr(status, "CommandNotFound");
 
     if (NULL == ptr) {
-		dbprint("--kvm: using snapshot shared memory support\n");
+		dbprint("--kvm: using shared memory snapshot support\n");
         return VMI_SUCCESS;
     }
     else {
-		errprint("--kvm: didn't find snapshot shared memory support\n");
+		errprint("--kvm: didn't find shared memory snapshot support\n");
         return VMI_FAILURE;
     }
 }
 
+/*
+ * set kvm->shared_memory_snapshot_fd
+ * set kvm->shared_memory_snapshot_map
+ */
 static status_t
 link_mmap_shared_memory_snapshot_dev(
 	    vmi_instance_t vmi)
@@ -351,11 +383,15 @@ link_mmap_shared_memory_snapshot_dev(
     return VMI_SUCCESS;
 }
 
+/**
+ * clear kvm->shared_memory_snapshot_map
+ * clear kvm->shared_memory_snapshot_fd
+ * clear kvm->shared_memory_snapshot_path
+ */
 static status_t
 munmap_unlink_shared_memory_snapshot_dev(
-	    vmi_instance_t vmi, uint64_t mem_size)
+		kvm_instance_t *kvm, uint64_t mem_size)
 {
-    kvm_instance_t *kvm = kvm_get_instance(vmi);
 
     if (kvm->shared_memory_snapshot_map) {
         (void) munmap(kvm->shared_memory_snapshot_map, mem_size);
@@ -365,6 +401,7 @@ munmap_unlink_shared_memory_snapshot_dev(
     if (kvm->shared_memory_snapshot_fd) {
     	shm_unlink(kvm->shared_memory_snapshot_path);
     	free(kvm->shared_memory_snapshot_path);
+        kvm->shared_memory_snapshot_path = NULL;
         kvm->shared_memory_snapshot_fd = 0;
     }
 
@@ -411,6 +448,51 @@ kvm_release_memory_shared_memory_snapshot(
     void *memory,
     size_t length)
 {
+}
+
+status_t
+kvm_setup_snapshot_mode(
+	    vmi_instance_t vmi)
+{
+	char *snapshot_status = exec_shared_memory_snapshot(vmi);
+	if (VMI_SUCCESS == exec_shared_memory_snapshot_success(snapshot_status)) {
+
+		// dump cpu registers
+		char *cpu_regs = exec_info_registers(kvm_get_instance(vmi));
+		kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs = strdup(cpu_regs);
+		free(cpu_regs);
+
+		memory_cache_destroy(vmi);
+		memory_cache_init(vmi, kvm_get_memory_shared_memory_snapshot, kvm_release_memory_shared_memory_snapshot,
+							  1);
+
+		if (snapshot_status)
+			free (snapshot_status);
+		return link_mmap_shared_memory_snapshot_dev(vmi);
+	} else {
+		if (snapshot_status)
+			free (snapshot_status);
+		return VMI_FAILURE;
+	}
+}
+
+status_t
+kvm_teardown_snapshot_mode(
+		vmi_instance_t vmi)
+{
+    kvm_instance_t *kvm = kvm_get_instance(vmi);
+
+    if (VMI_SUCCESS == test_using_snapshot(kvm)) {
+    	dbprint("--kvm: teardown KVM shared memory snapshot\n");
+    	munmap_unlink_shared_memory_snapshot_dev(kvm, vmi->size);
+    	if (kvm->shared_memory_snapshot_cpu_regs != NULL) {
+    		free(kvm->shared_memory_snapshot_cpu_regs);
+    		kvm->shared_memory_snapshot_cpu_regs = NULL;
+    	}
+
+        memory_cache_destroy(vmi);
+    }
+    return VMI_SUCCESS;
 }
 
 void *
@@ -536,6 +618,48 @@ error_exit:
     return VMI_FAILURE;
 }
 
+/**
+ * Setup KVM live (i.e. KVM patch or KVM native) mode.
+ * If KVM patch has been setup before, resume it.
+ * If KVM patch hasn't been setup but is available, setup
+ * KVM patch, otherwise setup KVM native.
+ */
+status_t
+kvm_setup_live_mode(
+	    vmi_instance_t vmi)
+{
+    kvm_instance_t *kvm = kvm_get_instance(vmi);
+
+    if (VMI_SUCCESS == test_using_kvm_patch(kvm)) {
+        dbprint("--kvm: resume custom patch for fast memory access\n");
+        memory_cache_destroy(vmi);
+        memory_cache_init(vmi, kvm_get_memory_patch, kvm_release_memory,
+                          1);
+        return VMI_SUCCESS;
+    }
+
+    char *status = exec_memory_access(kvm_get_instance(vmi));
+    if (VMI_SUCCESS == exec_memory_access_success(status)) {
+        dbprint("--kvm: using custom patch for fast memory access\n");
+        memory_cache_destroy(vmi);
+        memory_cache_init(vmi, kvm_get_memory_patch, kvm_release_memory,
+                          1);
+        if (status)
+            free(status);
+        return init_domain_socket(kvm_get_instance(vmi));
+    }
+    else {
+        dbprint
+            ("--kvm: didn't find patch, falling back to slower native access\n");
+        memory_cache_destroy(vmi);
+        memory_cache_init(vmi, kvm_get_memory_native,
+                          kvm_release_memory, 1);
+        if (status)
+            free(status);
+        return VMI_SUCCESS;
+    }
+}
+
 //----------------------------------------------------------------------------
 // General Interface Functions (1-1 mapping to driver_* function)
 
@@ -591,51 +715,10 @@ kvm_init(
     dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", (*vmi)->size,
             (*vmi)->size);
 
-    kvm_get_instance(vmi)->shared_memory_snapshot_path = NULL;
-    kvm_get_instance(vmi)->shared_memory_snapshot_map = NULL;
-    kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs = NULL;
-
-    // test and setup KVM shared memory snapshot.
     if (vmi->flags & VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT) {
-    	char *snapshot_status = exec_shared_memory_snapshot(vmi);
-		if (VMI_SUCCESS == exec_shared_memory_snapshot_success(snapshot_status)) {
-
-			// dump cpu registers
-			char *cpu_regs = exec_info_registers(kvm_get_instance(vmi));
-			kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs = strdup(cpu_regs);
-			free(cpu_regs);
-
-			memory_cache_init(vmi, kvm_get_memory_shared_memory_snapshot, kvm_release_memory_shared_memory_snapshot,
-								  1);
-
-			if (snapshot_status)
-				free (snapshot_status);
-			return link_mmap_shared_memory_snapshot_dev(vmi);
-		} else {
-			if (snapshot_status)
-				free (snapshot_status);
-			return VMI_FAILURE;
-		}
-    }
-
-    char *status = exec_memory_access(kvm_get_instance(vmi));
-
-    if (VMI_SUCCESS == exec_memory_access_success(status)) {
-        dbprint("--kvm: using custom patch for fast memory access\n");
-        memory_cache_init(vmi, kvm_get_memory_patch, kvm_release_memory,
-                          1);
-        if (status)
-            free(status);
-        return init_domain_socket(kvm_get_instance(vmi));
-    }
-    else {
-        dbprint
-            ("--kvm: didn't find patch, falling back to slower native access\n");
-        memory_cache_init(vmi, kvm_get_memory_native,
-                          kvm_release_memory, 1);
-        if (status)
-            free(status);
-        return VMI_SUCCESS;
+    	return kvm_create_snapshot(vmi);
+    } else {
+    	return kvm_setup_live_mode(vmi);
     }
 }
 
@@ -648,10 +731,7 @@ kvm_destroy(
     destroy_domain_socket(kvm_get_instance(vmi));
 
     if (vmi->flags & VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT) {
-    	dbprint("--kvm: teardown KVM shared memory snapshot\n");
-    	munmap_unlink_shared_memory_snapshot_dev(vmi, vmi->size);
-    	if (kvm->shared_memory_snapshot_cpu_regs != NULL)
-    		free(kvm->shared_memory_snapshot_cpu_regs);
+    	kvm_teardown_snapshot_mode(vmi);
     }
 
     if (kvm_get_instance(vmi)->dom) {
@@ -1075,6 +1155,30 @@ kvm_resume_vm(
     return VMI_SUCCESS;
 }
 
+
+
+status_t
+kvm_create_snapshot(
+    vmi_instance_t vmi)
+{
+    if (VMI_SUCCESS == test_using_snapshot(kvm_get_instance(vmi))) {
+    	kvm_teardown_snapshot_mode(vmi);
+    }
+
+    return kvm_setup_snapshot_mode(vmi);
+}
+
+
+status_t
+kvm_destroy_snapshot(
+    vmi_instance_t vmi)
+{
+	kvm_teardown_snapshot_mode(vmi);
+
+	return kvm_setup_live_mode(vmi);
+}
+
+
 //////////////////////////////////////////////////////////////////////
 #else
 
@@ -1208,6 +1312,20 @@ kvm_pause_vm(
 
 status_t
 kvm_resume_vm(
+    vmi_instance_t vmi)
+{
+    return VMI_FAILURE;
+}
+
+status_t
+kvm_create_snapshot(
+    vmi_instance_t vmi)
+{
+    return VMI_FAILURE;
+}
+
+status_t
+kvm_destroy_snapshot(
     vmi_instance_t vmi)
 {
     return VMI_FAILURE;
