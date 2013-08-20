@@ -4,7 +4,7 @@
  *
  * Copyright 2012 VMITools Project
  *
- * Author: Bryan D. Payne (bdpayne@acm.org)
+ * Author: Bryan D. Payne (bdpayne@acm.org), Guanglin Xu (mzguanglin@gmail.com)
  *
  * This file is part of LibVMI.
  *
