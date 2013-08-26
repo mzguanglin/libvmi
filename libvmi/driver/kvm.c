@@ -254,13 +254,13 @@ test_using_snapshot(
 		kvm_instance_t *kvm)
 {
 
-	if (kvm->shared_memory_snapshot_path != NULL && kvm->shared_memory_snapshot_fd != NULL
-			&& kvm->shared_memory_snapshot_map != NULL && kvm->shared_memory_snapshot_cpu_regs != NULL) {
-		dbprint("is using snapshot\n");
-		return VMI_SUCCESS;
+	if (NULL != kvm->shared_memory_snapshot_path && NULL != kvm->shared_memory_snapshot_fd
+        && NULL != kvm->shared_memory_snapshot_map && NULL != kvm->shared_memory_snapshot_cpu_regs) {
+        dbprint("is using snapshot\n");
+        return VMI_SUCCESS;
 	} else {
-		dbprint("is not using snapshot\n");
-		return VMI_FAILURE;
+        dbprint("is not using snapshot\n");
+        return VMI_FAILURE;
 	}
 }
 
