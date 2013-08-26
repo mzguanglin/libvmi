@@ -317,8 +317,8 @@ Feature      | Option                  | Reason
 Xen Support  | --enable-xen=$enable_xen$xen_space   | $have_xen
 Xen Events   | --enable-xen-events=$enable_xen_events$xen_event_space | $have_xen_events
 KVM Support  | --enable-kvm=$enable_kvm$kvm_space   | $have_kvm
-Snapshot     | --enable-snapshot=$enable_snapshot$snapshot_space   | $have_snapshot
 File Support | --enable-file=$enable_file$file_space  | $have_file
+Snapshot     | --enable-snapshot=$enable_snapshot$snapshot_space   | $have_snapshot
 -------------|-------------------------|----------------------------
 
 Tools        | Option                  | Reason
