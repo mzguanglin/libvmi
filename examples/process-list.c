@@ -31,86 +31,6 @@
 #include <sys/mman.h>
 #include <stdio.h>
 
-void list_processes(vmi_instance_t* vmi, addr_t current_process,
-		addr_t list_head, unsigned long tasks_offset, addr_t current_list_entry,
-		status_t status, addr_t next_list_entry, unsigned long pid_offset,
-		vmi_pid_t pid, char* procname, unsigned long name_offset) {
-	/* demonstrate name and id accessors */
-	char* name2 = vmi_get_name(vmi);
-	if (VMI_FILE != vmi_get_access_mode(vmi)) {
-		unsigned long id = vmi_get_vmid(vmi);
-
-		printf("Process listing for VM %s (id=%lu)\n", name2, id);
-	} else {
-		printf("Process listing for file %s\n", name2);
-	}
-	free(name2);
-	/* get the head of the list */
-	if (VMI_OS_LINUX == vmi_get_ostype(vmi)) {
-		/* Begin at PID 0, the 'swapper' task. It's not typically shown by OS
-		 *  utilities, but it is indeed part of the task list and useful to
-		 *  display as such.
-		 */
-		current_process = vmi_translate_ksym2v(vmi, "init_task");
-	} else if (VMI_OS_WINDOWS == vmi_get_ostype(vmi)) {
-		// find PEPROCESS PsInitialSystemProcess
-		vmi_read_addr_ksym(vmi, "PsInitialSystemProcess", &current_process);
-	}
-
-	/* walk the task list */
-	list_head = current_process + tasks_offset;
-	current_list_entry = list_head;
-	status = vmi_read_addr_va(vmi, current_list_entry, 0, &next_list_entry);
-	if (status == VMI_FAILURE) {
-		printf("Failed to read next pointer at 0x%lx before entering loop\n",
-				current_list_entry);
-		goto error_exit;
-	}
-	printf("Next list entry is at: %lx\n", next_list_entry);
-	do {
-		/* Note: the task_struct that we are looking at has a lot of
-		 * information.  However, the process name and id are burried
-		 * nice and deep.  Instead of doing something sane like mapping
-		 * this data to a task_struct, I'm just jumping to the location
-		 * with the info that I want.  This helps to make the example
-		 * code cleaner, if not more fragile.  In a real app, you'd
-		 * want to do this a little more robust :-)  See
-		 * include/linux/sched.h for mode details */
-
-		/* NOTE: _EPROCESS.UniqueProcessId is a really VOID*, but is never > 32 bits,
-		 * so this is safe enough for x64 Windows for example purposes */
-		vmi_read_32_va(vmi, current_process + pid_offset, 0, &pid);
-
-		procname = vmi_read_str_va(vmi, current_process + name_offset, 0);
-
-		if (!procname) {
-			printf("Failed to find procname\n");
-			goto error_exit;
-		}
-
-		/* print out the process name */
-		printf("[%5d] %s (struct addr:%lx)\n", pid, procname, current_process);
-		if (procname) {
-			free(procname);
-			procname = NULL;
-		}
-
-		current_list_entry = next_list_entry;
-		current_process = current_list_entry - tasks_offset;
-
-		/* follow the next pointer */
-
-		status = vmi_read_addr_va(vmi, current_list_entry, 0, &next_list_entry);
-		if (status == VMI_FAILURE) {
-			printf("Failed to read next pointer in loop at %lx\n",
-					current_list_entry);
-			goto error_exit;
-		}
-
-	} while (next_list_entry != list_head);
-	error_exit: if (procname)
-		free(procname);
-}
 int main (int argc, char **argv)
 {
     vmi_instance_t vmi;
@@ -167,53 +87,99 @@ int main (int argc, char **argv)
         }
     }
 
-#if ENABLE_SNAPSHOT == 1
-    printf("*enter live mode\n");
-#endif
     /* pause the vm for consistent memory access */
     if (vmi_pause_vm(vmi) != VMI_SUCCESS) {
         printf("Failed to pause VM\n");
         goto error_exit;
-    }
+    } // if
 
     /* demonstrate name and id accessors */
-	list_processes(vmi, current_process, list_head, tasks_offset,
-			current_list_entry, status, next_list_entry, pid_offset, pid,
-			procname, name_offset);
+    char *name2 = vmi_get_name(vmi);
+
+    if (VMI_FILE != vmi_get_access_mode(vmi)) {
+        unsigned long id = vmi_get_vmid(vmi);
+
+        printf("Process listing for VM %s (id=%lu)\n", name2, id);
+    }
+    else {
+        printf("Process listing for file %s\n", name2);
+    }
+    free(name2);
+
+    /* get the head of the list */
+    if (VMI_OS_LINUX == vmi_get_ostype(vmi)) {
+        /* Begin at PID 0, the 'swapper' task. It's not typically shown by OS
+         *  utilities, but it is indeed part of the task list and useful to
+         *  display as such.
+         */
+        current_process = vmi_translate_ksym2v(vmi, "init_task");
+    }
+    else if (VMI_OS_WINDOWS == vmi_get_ostype(vmi)) {
+
+        // find PEPROCESS PsInitialSystemProcess
+        vmi_read_addr_ksym(vmi, "PsInitialSystemProcess", &current_process);
+
+    }
+
+    /* walk the task list */
+    list_head = current_process + tasks_offset;
+    current_list_entry = list_head;
+
+    status = vmi_read_addr_va(vmi, current_list_entry, 0, &next_list_entry);
+    if (status == VMI_FAILURE) {
+        printf("Failed to read next pointer at 0x%lx before entering loop\n",
+                current_list_entry);
+        goto error_exit;
+    }
+
+    printf("Next list entry is at: %lx\n", next_list_entry);
+
+    do {
+        /* Note: the task_struct that we are looking at has a lot of
+         * information.  However, the process name and id are burried
+         * nice and deep.  Instead of doing something sane like mapping
+         * this data to a task_struct, I'm just jumping to the location
+         * with the info that I want.  This helps to make the example
+         * code cleaner, if not more fragile.  In a real app, you'd
+         * want to do this a little more robust :-)  See
+         * include/linux/sched.h for mode details */
+
+        /* NOTE: _EPROCESS.UniqueProcessId is a really VOID*, but is never > 32 bits,
+         * so this is safe enough for x64 Windows for example purposes */
+        vmi_read_32_va(vmi, current_process + pid_offset, 0, &pid);
+
+        procname = vmi_read_str_va(vmi, current_process + name_offset, 0);
+
+        if (!procname) {
+            printf("Failed to find procname\n");
+            goto error_exit;
+        }
+
+        /* print out the process name */
+        printf("[%5d] %s (struct addr:%lx)\n", pid, procname, current_process);
+        if (procname) {
+            free(procname);
+            procname = NULL;
+        }
+
+        current_list_entry = next_list_entry;
+        current_process = current_list_entry - tasks_offset;
+
+        /* follow the next pointer */
+
+        status = vmi_read_addr_va(vmi, current_list_entry, 0, &next_list_entry);
+        if (status == VMI_FAILURE) {
+            printf("Failed to read next pointer in loop at %lx\n", current_list_entry);
+            goto error_exit;
+        }
+
+    } while (next_list_entry != list_head);
+
+    error_exit: if (procname)
+        free(procname);
 
     /* resume the vm */
     vmi_resume_vm(vmi);
-
-
-#if ENABLE_SNAPSHOT == 1
-    printf("*switch to snapshot mode\n");
-
-    if (vmi_snapshot_create(vmi) != VMI_SUCCESS) {
-        printf("Failed to snapshot VM\n");
-        goto error_exit;
-    }
-
-	list_processes(vmi, current_process, list_head, tasks_offset,
-			current_list_entry, status, next_list_entry, pid_offset, pid,
-			procname, name_offset);
-
-	printf("*switch to live mode\n");
-	vmi_snapshot_destroy(vmi);
-
-    if (vmi_pause_vm(vmi) != VMI_SUCCESS) {
-        printf("Failed to pause VM\n");
-        goto error_exit;
-    }
-
-	list_processes(vmi, current_process, list_head, tasks_offset,
-			current_list_entry, status, next_list_entry, pid_offset, pid,
-			procname, name_offset);
-
-    vmi_resume_vm(vmi);
-#endif
-
-	error_exit: if (procname)
-		free(procname);
 
     /* cleanup any memory associated with the LibVMI instance */
     vmi_destroy(vmi);
