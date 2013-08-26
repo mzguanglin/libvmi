@@ -87,6 +87,9 @@ status_t driver_pause_vm(
 status_t driver_resume_vm(
     vmi_instance_t vmi);
 #if ENABLE_SNAPSHOT == 1
+/* "shared memory snapshot" feature is applicable to
+ * hypervisor drivers (e.g. KVM, Xen), and not to the
+ * other drivers (e.g. File). */
 status_t driver_snapshot_vm(
     vmi_instance_t vmi);
 status_t driver_destroy_snapshot_vm(
