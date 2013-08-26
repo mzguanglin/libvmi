@@ -202,6 +202,9 @@ driver_kvm_setup(
 #if ENABLE_SNAPSHOT == 1
 	instance->create_snapshot_ptr = &kvm_create_snapshot;
 	instance->destroy_snapshot_ptr = &kvm_destroy_snapshot;
+#else
+	instance->create_snapshot_ptr = NULL;
+	instance->destroy_snapshot_ptr = NULL;
 #endif
     instance->events_listen_ptr = NULL;
     instance->set_reg_access_ptr = NULL;
