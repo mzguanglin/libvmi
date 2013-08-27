@@ -272,27 +272,35 @@ exec_shared_memory_snapshot(
 {
 	kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    char *tmpfile = tempnam("/", (char *) virDomainGetName(kvm->dom));
-    char *query = (char *) safe_malloc(256);
+	// get a random unique path e.g. /dev/shm/[domain name]xxxxxx.
+    char *unique_shm_path = tempnam("/dev/shm", (char *) virDomainGetName(kvm->dom));
 
-    sprintf(query, "'{\"execute\": \"snapshot-create\", \"arguments\": {"
-    		" \"filename\": \"/%s\"}}'", tmpfile);
-    kvm->shared_memory_snapshot_path = strdup(tmpfile);
-    free(tmpfile);
-#ifdef MEASUREMENT
-	struct timeval ktv_start;
-	struct timeval ktv_end;
-	long int diff;
-	gettimeofday(&ktv_start, 0);
-#endif
-	char *output = exec_qmp_cmd(kvm, query);
-#ifdef MEASUREMENT
-	gettimeofday(&ktv_end, 0);
-	print_measurement(ktv_start, ktv_end, &diff);
-	printf("QMP snapshot measurement: %ld\n", diff);
-#endif
-    free(query);
-    return output;
+    if (NULL != unique_shm_path) {
+        char *shm_filename = basename(unique_shm_path);
+        char *query_template = "'{\"execute\": \"snapshot-create\", \"arguments\": {"
+            " \"filename\": \"/%s\"}}'";
+        char *query = (char *) safe_malloc(strlen(query_template) - strlen("%s") + NAME_MAX + 1);
+        sprintf(query, query_template, shm_filename);
+        kvm->shared_memory_snapshot_path = strdup(shm_filename);
+        free(unique_shm_path);
+    #ifdef MEASUREMENT
+        struct timeval ktv_start;
+        struct timeval ktv_end;
+        long int diff;
+        gettimeofday(&ktv_start, 0);
+    #endif
+        char *output = exec_qmp_cmd(kvm, query);
+    #ifdef MEASUREMENT
+        gettimeofday(&ktv_end, 0);
+        print_measurement(ktv_start, ktv_end, &diff);
+        printf("QMP snapshot measurement: %ld\n", diff);
+    #endif
+        free(query);
+        return output;
+    }
+    else {
+    	return NULL;
+    }
 }
 
 static status_t
