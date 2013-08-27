@@ -253,7 +253,6 @@ status_t
 test_using_snapshot(
 		kvm_instance_t *kvm)
 {
-
 	if (NULL != kvm->shared_memory_snapshot_path && NULL != kvm->shared_memory_snapshot_fd
         && NULL != kvm->shared_memory_snapshot_map && NULL != kvm->shared_memory_snapshot_cpu_regs) {
         dbprint("is using snapshot\n");
@@ -280,30 +279,20 @@ exec_shared_memory_snapshot(
     		" \"filename\": \"/%s\"}}'", tmpfile);
     kvm->shared_memory_snapshot_path = strdup(tmpfile);
     free(tmpfile);
-
 #ifdef MEASUREMENT
 	struct timeval ktv_start;
 	struct timeval ktv_end;
 	long int diff;
-
 	gettimeofday(&ktv_start, 0);
 #endif
-
 	char *output = exec_qmp_cmd(kvm, query);
-
 #ifdef MEASUREMENT
-
 	gettimeofday(&ktv_end, 0);
-
 	print_measurement(ktv_start, ktv_end, &diff);
-
 	printf("QMP snapshot measurement: %ld\n", diff);
-
 #endif
-
     free(query);
     return output;
-
 }
 
 static status_t
@@ -311,11 +300,9 @@ exec_shared_memory_snapshot_success(
 		char* status)
 {
 	// successful status should like: {"return":2684354560,"id":"libvirt-812"}
-
 	if (NULL == status) {
         return VMI_FAILURE;
     }
-
     char *ptr = strcasestr(status, "CommandNotFound");
     if (NULL == ptr) {
     	uint64_t snapshot_size = strtoul(status + strlen("{\"return\":"), NULL, 0);
@@ -342,54 +329,42 @@ exec_shared_memory_snapshot_success(
  */
 static status_t
 link_mmap_shared_memory_snapshot_dev(
-	    vmi_instance_t vmi)
+    vmi_instance_t vmi)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
-
     if ((kvm->shared_memory_snapshot_fd = shm_open(kvm->shared_memory_snapshot_path, O_RDONLY, NULL)) < 0) {
-    	errprint("fail in shm_open %s", kvm->shared_memory_snapshot_path);
-    	return VMI_FAILURE;
+        errprint("fail in shm_open %s", kvm->shared_memory_snapshot_path);
+        return VMI_FAILURE;
     }
-
     ftruncate(kvm->shared_memory_snapshot_fd, vmi->size);
 
     /* try memory mapped file I/O */
     int mmap_flags = (MAP_PRIVATE | MAP_NORESERVE | MAP_POPULATE);
-
 #ifdef MMAP_HUGETLB // since kernel 2.6.32
     mmap_flags |= MMAP_HUGETLB;
 #endif // MMAP_HUGETLB
 
 #ifdef MEASUREMENT
-	struct timeval ktv_start;
-	struct timeval ktv_end;
-	long int diff;
-
-	gettimeofday(&ktv_start, 0);
+    struct timeval ktv_start;
+    struct timeval ktv_end;
+    long int diff;
+    gettimeofday(&ktv_start, 0);
 #endif
-
-	kvm->shared_memory_snapshot_map = mmap(NULL,  // addr
-					 vmi->size,  // len
-                     PROT_READ, // prot
-                     mmap_flags,    // flags
-                     kvm->shared_memory_snapshot_fd,    // file descriptor
-                     (off_t) 0);    // offset
-
+    kvm->shared_memory_snapshot_map = mmap(NULL,  // addr
+        vmi->size,   // len
+        PROT_READ,   // prot
+        mmap_flags,  // flags
+        kvm->shared_memory_snapshot_fd,    // file descriptor
+        (off_t) 0);  // offset
     if (MAP_FAILED == kvm->shared_memory_snapshot_map) {
         perror("Failed to mmap shared memory snapshot dev");
         return VMI_FAILURE;
     }
-
 #ifdef MEASUREMENT
-
-	gettimeofday(&ktv_end, 0);
-
-	print_measurement(ktv_start, ktv_end, &diff);
-
-	printf("mmap measurement: %ld\n", diff);
-
+    gettimeofday(&ktv_end, 0);
+    print_measurement(ktv_start, ktv_end, &diff);
+    printf("mmap measurement: %ld\n", diff);
 #endif
-
     return VMI_SUCCESS;
 }
 
@@ -402,19 +377,16 @@ static status_t
 munmap_unlink_shared_memory_snapshot_dev(
 		kvm_instance_t *kvm, uint64_t mem_size)
 {
-
     if (kvm->shared_memory_snapshot_map) {
         (void) munmap(kvm->shared_memory_snapshot_map, mem_size);
         kvm->shared_memory_snapshot_map = 0;
     }
-
     if (kvm->shared_memory_snapshot_fd) {
     	shm_unlink(kvm->shared_memory_snapshot_path);
     	free(kvm->shared_memory_snapshot_path);
         kvm->shared_memory_snapshot_path = NULL;
         kvm->shared_memory_snapshot_fd = 0;
     }
-
     return VMI_SUCCESS;
 }
 
