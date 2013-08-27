@@ -422,8 +422,10 @@ error_noprint:
 /**
  * kvm_release_memory_shared_memory_snapshot
  *
- *  since kvm_get_memory_shared_memory_snapshot() didn't copy memory contents to a temporary buffer,
+ *  Since kvm_get_memory_shared_memory_snapshot() didn't copy memory contents to a temporary buffer,
  *	shared snapshot need not free memory.
+ *	However, this dummy function is still required as memory_cache.c need release_data_callback() to
+ *	free entries and it never checks if the callback is not NULL, which must cause segmentation fault.
  */
 void
 kvm_release_memory_shared_memory_snapshot(
