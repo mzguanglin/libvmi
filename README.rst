@@ -162,10 +162,10 @@ you need to do the following:
 - ./configure --enable-snapshot
 
 - Choose a setup method :
-  1) Add VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT flag to vmi_int(), then
-     vmi_init() will create a snapshot and enter snapshot mode automatically.
-     Once LibVMI enters the snapshot mode, memory access will be redirect to 
-     the shared memory snapshot, rather than your live guest VM.
+  1) Add VMI_INIT_SNAPSHOT flag to vmi_int(), then vmi_init() will create 
+     a snapshot and enter snapshot mode automatically. Once LibVMI enters 
+     the snapshot mode, memory access will be redirect to the shared memory 
+     snapshot, rather than your live guest VM.
   
   2) After the vmi_init() has been called, invoke vmi_snapshot_create(vmi)
      to snaphsot your guest VM and enter snapshot mode.

@@ -82,9 +82,7 @@ typedef uint32_t vmi_mode_t;
 
 #define VMI_INIT_EVENTS (1 << 18) /**< init support for memory events */
 
-#if ENABLE_SNAPSHOT == 1
-#define VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT (1 << 19) /**< make a KVM shared memory snapshot in vmi_init() */
-#endif
+#define VMI_INIT_SNAPSHOT (1 << 19) /**< setup shared memory snapshot in vmi_init() if the feature is activated */
 
 #define VMI_CONFIG_NONE (1 << 24) /**< no config provided */
 

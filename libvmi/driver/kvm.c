@@ -702,7 +702,7 @@ kvm_init(
             (*vmi)->size);
 
 
-    if (vmi->flags & VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT) {
+    if (vmi->flags & VMI_INIT_SNAPSHOT) {
     	return kvm_create_snapshot(vmi);
     } else
 #endif
@@ -720,7 +720,7 @@ kvm_destroy(
     destroy_domain_socket(kvm_get_instance(vmi));
 
 #if ENABLE_SNAPSHOT == 1
-    if (vmi->flags & VMI_INIT_WITH_KVM_SHARED_MEMORY_SNAPSHOT) {
+    if (vmi->flags & VMI_INIT_SNAPSHOT) {
     	kvm_teardown_snapshot_mode(vmi);
     }
 #endif
