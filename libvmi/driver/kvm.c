@@ -901,11 +901,10 @@ kvm_get_vcpureg(
 		regs = strdup(kvm_get_instance(vmi)->shared_memory_snapshot_cpu_regs);
 		dbprint("read cpu regs from snapshot\n");
 	}
-	else
 #endif
-	{
+
+	if (NULL == regs)
 		regs = exec_info_registers(kvm_get_instance(vmi));
-	}
 
     status_t ret = VMI_SUCCESS;
 
