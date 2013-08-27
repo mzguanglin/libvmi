@@ -310,17 +310,27 @@ static status_t
 exec_shared_memory_snapshot_success(
 		char* status)
 {
+	// successful status should like: {"return":2684354560,"id":"libvirt-812"}
+
 	if (NULL == status) {
         return VMI_FAILURE;
     }
 
     char *ptr = strcasestr(status, "CommandNotFound");
-
     if (NULL == ptr) {
-		dbprint("--kvm: using shared memory snapshot support\n");
-        return VMI_SUCCESS;
+    	uint64_t snapshot_size = strtoul(status + strlen("{\"return\":"), NULL, 0);
+    	if (snapshot_size > 0) {
+    		//qmp status e.g. : {"return":2684354560,"id":"libvirt-812"}
+    		dbprint("--kvm: using shared memory snapshot support\n");
+    		return VMI_SUCCESS;
+    	} else {
+    		//qmp status e.g. : {"return":0,"id":"libvirt-812"}
+    		errprint ("--kvm: fail to snapshot\n");
+    		return VMI_FAILURE;
+    	}
     }
     else {
+    	//qmp status e.g. : CommandNotFound
 		errprint("--kvm: didn't find shared memory snapshot support\n");
         return VMI_FAILURE;
     }
