@@ -706,8 +706,8 @@ kvm_init(
         errprint("Failed to get memory size.\n");
         return VMI_FAILURE;
     }
-    dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", (*vmi)->size,
-            (*vmi)->size);
+    dbprint("**set size = %"PRIu64" [0x%"PRIx64"]\n", vmi->size,
+            vmi->size);
 
 
     if (vmi->flags & VMI_INIT_SNAPSHOT) {
