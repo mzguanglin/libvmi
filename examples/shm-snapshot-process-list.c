@@ -31,6 +31,22 @@
 #include <sys/mman.h>
 #include <stdio.h>
 
+void print_measurement(
+    struct timeval ktv_start,
+    struct timeval ktv_end,
+    long int *diff)
+{
+    *diff =
+        (((long int) ktv_end.tv_usec - (long int) ktv_start.tv_usec) +
+          (((long int) ktv_end.tv_sec % 1000000 -
+             (long int) ktv_start.tv_sec % 1000000) * 1000000));
+    printf("%ld.%.6ld : %ld.%.6ld : %ld\n",
+              ((long int) ktv_start.tv_sec) % 1000000,
+              (long int) ktv_start.tv_usec,
+              ((long int) ktv_end.tv_sec) % 1000000,
+              (long int) ktv_end.tv_usec, *diff);
+}
+
 void list_processes(vmi_instance_t* vmi, addr_t current_process,
     addr_t list_head, unsigned long tasks_offset, addr_t current_list_entry,
     status_t status, addr_t next_list_entry, unsigned long pid_offset,
@@ -175,6 +191,16 @@ int main (int argc, char **argv)
         printf("Failed to snapshot VM\n");
         goto error_exit;
     }
+
+
+    struct timeval ktv_start;
+    struct timeval ktv_end;
+    long int diff;
+    gettimeofday(&ktv_start, 0);
+    vmi_replicate_snapshot_guest_kernel_pagetable(vmi);
+    gettimeofday(&ktv_end, 0);
+    print_measurement(ktv_start, ktv_end, &diff);
+
 
     /* demonstrate name and id accessors */
 	list_processes(vmi, current_process, list_head, tasks_offset,

@@ -31,6 +31,7 @@
 #include <wchar.h>
 #include <iconv.h>  // conversion between character sets
 #include <errno.h>
+#include "driver/kvm.h"
 
 ///////////////////////////////////////////////////////////
 // Classic read functions for access to memory
@@ -94,6 +95,19 @@ vmi_read_va(
     void *buf,
     size_t count)
 {
+    // directly read kernel virtual address.
+	void* dma_vaddr_base = ((kvm_instance_t *)vmi->driver)->shared_memory_snapshot_kernel_vaddr_base;
+
+	void* comBuf = NULL;
+	//comBuf = malloc(count);
+    if (0 == pid && NULL != dma_vaddr_base) {
+	    //printf("kernel_vaddr_base = %llx\n",dma_vaddr_base);
+    	//printf("copy from 0x%llx \n",  dma_vaddr_base + vaddr);
+        memcpy(((char *) buf), dma_vaddr_base + vaddr, count);
+        //memcpy(((char *) comBuf), dma_vaddr_base + vaddr, count);
+       return count;
+    }
+
     unsigned char *memory = NULL;
     addr_t paddr = 0;
     addr_t pfn = 0;
@@ -144,6 +158,15 @@ vmi_read_va(
         count -= read_len;
         buf_offset += read_len;
     }
+
+    if (0 == pid && NULL != dma_vaddr_base) {
+    	if (0 != memcmp(buf, comBuf, buf_offset))
+    		printf("inconsistent vaddr paddr\n");
+    	else
+    		printf("consistent vaddr paddr\n");
+
+    }
+    free(comBuf);
 
     return buf_offset;
 }

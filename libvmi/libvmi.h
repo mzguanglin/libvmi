@@ -359,6 +359,17 @@ status_t vmi_destroy(
  */
 
 /**
+ * Replicate guest kernel page table in the shared memory snapshot
+ * to the address space of vmi process, so MMU can translate the
+ * kernel virtual address transparently.
+ *
+ * @param[in] vmi LibVMI instance
+ * @return VMI_SUCCESS or VMI_FAILURE
+ */
+status_t vmi_replicate_snapshot_guest_kernel_pagetable(
+    vmi_instance_t vmi);
+
+/**
  * Performs the translation from a kernel virtual address to a
  * physical address.
  *

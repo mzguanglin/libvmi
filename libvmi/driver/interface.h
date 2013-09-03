@@ -94,6 +94,10 @@ status_t driver_snapshot_vm(
     vmi_instance_t vmi);
 status_t driver_destroy_snapshot_vm(
     vmi_instance_t vmi);
+status_t driver_replicate_snapshot_kernel_pagetable(
+	    vmi_instance_t vmi);
+void* driver_get_snapshot_kernel_vaddr_base(
+	vmi_instance_t vmi);
 #endif
 status_t driver_events_listen(
     vmi_instance_t vmi,

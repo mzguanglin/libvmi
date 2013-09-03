@@ -28,6 +28,19 @@
 #include <libvirt/libvirt.h>
 #include <libvirt/virterror.h>
 
+
+
+struct page_chrunk_struct{
+	addr_t vaddr_begin;
+	addr_t vaddr_end;
+	addr_t paddr_begin;
+	addr_t paddr_end;
+	struct page_chrunk_struct* next;
+};
+
+typedef struct page_chrunk_struct page_chrunk;
+typedef struct page_chrunk_struct *page_chrunk_t;
+
 typedef struct kvm_instance {
     virConnectPtr conn;
     virDomainPtr dom;
@@ -41,6 +54,9 @@ typedef struct kvm_instance {
     int   shared_memory_snapshot_fd;    /** file description of the shared memory snapshot device */
     void *shared_memory_snapshot_map;   /** mapped shared memory region */
     char *shared_memory_snapshot_cpu_regs;  /** string of dumped CPU registers */
+    void * shared_memory_snapshot_kernel_vaddr_base;  /** virtual address space base of guest kernel */
+	page_chrunk_t shared_memory_snapshot_kernel_page_list;
+	page_chrunk_t shared_memory_snapshot_kernel_page_head;
 #endif
 } kvm_instance_t;
 
@@ -109,4 +125,8 @@ status_t kvm_create_snapshot(
     vmi_instance_t vmi);
 status_t kvm_destroy_snapshot(
     vmi_instance_t vmi);
+status_t kvm_replicate_snapshot_kernel_pagetable(
+    vmi_instance_t vmi);
+void* kvm_get_snapshot_kernel_vaddr_base(
+	vmi_instance_t vmi);
 #endif

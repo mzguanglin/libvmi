@@ -112,6 +112,12 @@ struct driver_instance {
 	status_t (
 	*destroy_snapshot_ptr) (
 	vmi_instance_t);
+    status_t (
+	*replicate_snapshot_kernel_pagetable) (
+	vmi_instance_t);
+	void* (
+	*get_snapshot_kernel_vaddr_base) (
+	vmi_instance_t);
 	status_t (
     *events_listen_ptr)(
     vmi_instance_t,
@@ -202,9 +208,13 @@ driver_kvm_setup(
 #if ENABLE_SNAPSHOT == 1
 	instance->create_snapshot_ptr = &kvm_create_snapshot;
 	instance->destroy_snapshot_ptr = &kvm_destroy_snapshot;
+	instance->replicate_snapshot_kernel_pagetable = &kvm_replicate_snapshot_kernel_pagetable;
+	instance->get_snapshot_kernel_vaddr_base = &kvm_get_snapshot_kernel_vaddr_base;
 #else
 	instance->create_snapshot_ptr = NULL;
 	instance->destroy_snapshot_ptr = NULL;
+	instance->replicate_snapshot_kernel_pagetable = NULL;
+	instance->get_snapshot_kernel_vaddr_base = NULL;
 #endif
     instance->events_listen_ptr = NULL;
     instance->set_reg_access_ptr = NULL;
@@ -672,6 +682,34 @@ status_t driver_destroy_snapshot_vm(
         dbprint("WARNING: driver_destroy_snapshot_vm function not implemented.\n");
         return VMI_FAILURE;
     }
+}
+
+status_t driver_replicate_snapshot_kernel_pagetable(
+	    vmi_instance_t vmi) {
+    driver_instance_t ptrs = driver_get_instance(vmi);
+
+    if (NULL != ptrs && NULL != ptrs->replicate_snapshot_kernel_pagetable) {
+        return ptrs->replicate_snapshot_kernel_pagetable(vmi);
+    }
+    else {
+        dbprint("WARNING: driver_replicate_snapshot_kernel_pagetable function not implemented.\n");
+        return VMI_FAILURE;
+    }
+}
+
+void* driver_get_snapshot_kernel_vaddr_base(
+	vmi_instance_t vmi)
+{
+    driver_instance_t ptrs = driver_get_instance(vmi);
+
+    if (NULL != ptrs && NULL != ptrs->get_snapshot_kernel_vaddr_base) {
+        return ptrs->get_snapshot_kernel_vaddr_base(vmi);
+    }
+    else {
+        dbprint("WARNING: driver_get_snapshot_kernel_vaddr_base function not implemented.\n");
+        return NULL;
+    }
+	return NULL;
 }
 #endif
 

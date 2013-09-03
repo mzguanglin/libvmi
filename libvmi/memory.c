@@ -474,6 +474,20 @@ addr_t vmi_pagetable_lookup (vmi_instance_t vmi, addr_t dtb, addr_t vaddr)
     return paddr;
 }
 
+status_t vmi_replicate_snapshot_guest_kernel_pagetable(
+    vmi_instance_t vmi) {
+    return driver_replicate_snapshot_kernel_pagetable(vmi);
+}
+
+// return NULL means there isn't page table replication
+void* vmi_get_guest_snapshot_kernel_vaddr_base(vmi_instance_t vmi) {
+
+	void* ret = driver_get_snapshot_kernel_vaddr_base(vmi);
+    printf("get ret kernel_vaddr_base = %llx\n",ret);
+
+    return ret;
+}
+
 /* expose virtual to physical mapping for kernel space via api call */
 addr_t vmi_translate_kv2p (vmi_instance_t vmi, addr_t virt_address)
 {

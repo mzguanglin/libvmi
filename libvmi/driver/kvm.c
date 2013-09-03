@@ -1165,7 +1165,6 @@ kvm_create_snapshot(
     if (VMI_SUCCESS == test_using_snapshot(kvm_get_instance(vmi))) {
     	kvm_teardown_snapshot_mode(vmi);
     }
-
     return kvm_setup_snapshot_mode(vmi);
 }
 
@@ -1177,6 +1176,257 @@ kvm_destroy_snapshot(
 
 	return kvm_setup_live_mode(vmi);
 }
+
+
+status_t map_page_table(
+	    vmi_instance_t vmi,page_chrunk_t page_list, page_chrunk_t page_head) {
+
+	// size
+	addr_t size = page_head->vaddr_end - page_list->vaddr_begin;
+
+	// find a proper vaddr base
+    void *map = mmap(NULL,  // addr
+    	size,   // 4gb vaddr space
+        PROT_READ,   // prot
+        MAP_PRIVATE | MAP_ANONYMOUS|MAP_NORESERVE,  // flags
+        NULL,    // file descriptor
+        NULL);  // offset
+    if (MAP_FAILED != map) {
+    	kvm_get_instance(vmi)->shared_memory_snapshot_kernel_vaddr_base = map;
+        (void) munmap(map, size);
+    } else {
+        perror("Failed to mmap anonymous memory");
+        return VMI_FAILURE;
+    }
+
+    int i=0;
+	if (NULL != page_list) {
+		do {
+			/*printf("%d, va: 0x%llx - 0x%llx, pa: 0x%llx - 0x%llx, size: %dKB\n", i++,
+					page_list->vaddr_begin, page_list->vaddr_end,
+					page_list->paddr_begin, page_list->paddr_end,
+					(page_list->vaddr_end - page_list->vaddr_begin+1)/1024);*/
+			dbprint("%d, va: %lldM - %lldM, pa: %lldM - %lldM, size: %dKB\n", i++,
+					page_list->vaddr_begin>>20, page_list->vaddr_end>>20,
+					page_list->paddr_begin>>20, page_list->paddr_end>>20,
+					(page_list->vaddr_end - page_list->vaddr_begin+1)>>10);
+
+		      void *map = mmap(kvm_get_instance(vmi)->shared_memory_snapshot_kernel_vaddr_base + page_list->vaddr_begin,  // addr
+		    		      (page_list->vaddr_end - page_list->vaddr_begin+1),   // len
+				          PROT_READ,   // prot
+				          MAP_PRIVATE | MAP_NORESERVE | MAP_POPULATE | MAP_FIXED,  // flags
+				          kvm_get_instance(vmi)->shared_memory_snapshot_fd,    // file descriptor
+				          page_list->paddr_begin);  // offset
+		        if (MAP_FAILED != map) {
+				    //test
+				    /*void* vBuf = malloc((page_list->vaddr_end - page_list->vaddr_begin+1));
+				    void* pBuf = malloc(page_list->vaddr_end - page_list->vaddr_begin+1);
+				    vmi_read_va(vmi, page_list->vaddr_begin, 0, vBuf, (page_list->vaddr_end - page_list->vaddr_begin+1));
+				    vmi_read_pa(vmi, page_list->paddr_begin, pBuf, (page_list->vaddr_end - page_list->vaddr_begin+1));
+			    	if (0 != memcmp(vBuf, pBuf, (page_list->vaddr_end - page_list->vaddr_begin+1))) {
+			    		printf("inconsistent vaddr %llx paddr %llx\n", page_list->vaddr_begin, page_list->paddr_begin);
+		    			printf("vaddr %x %x %x\n", *((int*)vBuf + 0),*((int*)vBuf + 1),*((int*)vBuf + 2) );
+		    			printf("paddr %x %x %x\n", *((int*)pBuf + 0),*((int*)pBuf + 1),*((int*)pBuf + 2) );
+			    	}
+			    	else {
+			    		dbprint("consistent vaddr %llx paddr %llx\n", page_list->vaddr_begin, page_list->paddr_begin);
+			    		dbprint("vaddr %x %x %x\n", *((int*)vBuf + 0),*((int*)vBuf + 1),
+	    					*((int*)vBuf + 2) );
+			    		dbprint("paddr %x %x %x\n", *((int*)pBuf + 0),*((int*)pBuf + 1),*((int*)pBuf + 2) );
+			    	}
+			    	free(vBuf);
+			    	free(pBuf);*/
+
+		        } else {
+		            perror("Failed to mmap page");
+		            return VMI_FAILURE;
+		        }
+			page_list = page_list->next;
+		} while (NULL!= page_list);
+	}
+	return VMI_SUCCESS;
+}
+
+void print_page_entry(page_chrunk_t page_list) {
+	int i=0;
+	if (NULL != page_list) {
+		do {
+			dbprint("%d, va: 0x%llx - 0x%llx, pa: 0x%llx - 0x%llx, size: %dKB\n", i++,
+					page_list->vaddr_begin, page_list->vaddr_end,
+					page_list->paddr_begin, page_list->paddr_end,
+					(page_list->vaddr_end - page_list->vaddr_begin+1)/1024);
+
+			//if (i==0)
+			//	printf("1st vaddr = 0x%x\n", page_list->vaddr_begin);
+			page_list = page_list->next;
+		} while (NULL!= page_list);
+	}
+}
+
+static int page_count = 0;
+
+void add_page_entry_to_list(page_chrunk_t *page_list, page_chrunk_t *head,
+		addr_t start_vaddr, addr_t end_vaddr, addr_t start_paddr, addr_t end_paddr)
+{
+	dbprint("page_count:%d, vaddr: 0x%llx - 0x%llx, paddr: 0x%llx - 0x%llx, size:%dKB\n", page_count++, start_vaddr, end_vaddr,
+			start_paddr, end_paddr, (end_vaddr-start_vaddr+1)>>10);
+	// add to list
+	if (NULL == *page_list) {
+		*page_list = malloc(sizeof(page_chrunk));
+		memset(*page_list, 0, sizeof(page_chrunk));
+		(*page_list)->vaddr_begin = start_vaddr;
+		(*page_list)->vaddr_end = end_vaddr;
+		(*page_list)->paddr_begin = start_paddr;
+		(*page_list)->paddr_end = end_paddr;
+		(*head) = *page_list;
+	} else {
+		if (start_vaddr == (*head)->vaddr_end + 1 && start_paddr == (*head)->paddr_end + 1) {
+			// merge
+			(*head)->vaddr_end = end_vaddr;
+			(*head)->paddr_end = end_paddr;
+		} else {
+			// new entry
+			page_chrunk_t new_page = malloc(sizeof(page_chrunk));
+			memset(new_page, 0, sizeof(page_chrunk));
+			new_page->vaddr_begin = start_vaddr;
+			new_page->vaddr_end = end_vaddr;
+			new_page->paddr_begin = start_paddr;
+			new_page->paddr_end = end_paddr;
+			(*head)->next = new_page;
+			(*head) = new_page;
+		}
+	}
+}
+
+
+
+status_t
+walkthrough_kernel_pagetable_nopae(
+    vmi_instance_t vmi,
+    addr_t dtb)
+{
+	page_chrunk_t page_list = NULL;
+	page_chrunk_t page_head = NULL;
+
+	//read page directory page
+    unsigned char *page_directory = NULL;
+    addr_t pfn = 0;
+    pfn = dtb >> vmi->page_shift;
+    page_directory = vmi_read_page(vmi, pfn);
+
+    // walk through page directory entries
+    addr_t i;
+    for (i=0; i<1024; i++) {
+    	uint32_t page_directory_entry = *(uint32_t*)(page_directory + sizeof(uint32_t) * i);
+    	if (entry_present(vmi->os_type, page_directory_entry)) //valid
+    	{
+    		dbprint("page_frame_number =0x%x, U%d, P%d, Cw%d, GI%d, L%d,"
+    			" D%d, A%d, Cd%d, Wt%d, O%d, W%d, V%d\n", (page_directory_entry>>12) & 0xFFFFF000,
+    			(page_directory_entry>>11)&1, (page_directory_entry>>10)&1,(page_directory_entry>>9)&1,
+    			(page_directory_entry>>8)&1,(page_directory_entry>>7)&1,
+    			(page_directory_entry>>6)&1, (page_directory_entry>>5)&1,
+    			(page_directory_entry>>4)&1,(page_directory_entry>>3)&1,
+    			(page_directory_entry>>2)&1,(page_directory_entry>>1)&1,
+    			page_directory_entry&1);
+
+            if (page_size_flag(page_directory_entry)) {
+            	// large page (4mb)
+            	addr_t start_vaddr = i << 22;  // left 10 bits
+            	addr_t end_vaddr =   start_vaddr | 0x3FFFFF; // begin + 4mb
+            	addr_t start_paddr = page_directory_entry & 0xFFC00000; // left 10 bits
+            	addr_t end_paddr = start_paddr | 0x3FFFFF; // begin + 4mb
+            	if (start_paddr < vmi->size) {
+					add_page_entry_to_list(&page_list, &page_head,  start_vaddr,  end_vaddr, start_paddr, end_paddr);
+            	}
+            }
+            else {
+            	 // page table entry
+            	 unsigned char *page_table = NULL;
+            	 pfn = ptba_base_nopae(page_directory_entry) >> vmi->page_shift;
+            	 page_table = vmi_read_page(vmi, pfn);
+
+            	 addr_t j;
+            	 for (j=0; j<1024; j++) {
+            	    	uint32_t page_table_entry = *(uint32_t*)(page_table + sizeof(uint32_t) * j);
+            	    	if (entry_present(vmi->os_type, page_table_entry)) //valid
+            	    	{
+            	    		dbprint("valid page table entry %d, %8x:\n", i, page_table_entry);
+            	    		// 4kb page
+                        	addr_t start_vaddr = i << 22 | j << 12;  // left 20 bits
+                        	addr_t end_vaddr =   start_vaddr | 0xFFF; // begin + 4kb
+                        	addr_t start_paddr = (page_table_entry & 0xFFFFF000); // left 20 bits
+                        	addr_t end_paddr = start_paddr | 0xFFF; // begin + 4kb
+                        	if (start_paddr < vmi->size) {
+                				add_page_entry_to_list(&page_list, &page_head,  start_vaddr,  end_vaddr, start_paddr, end_paddr);
+                        	}
+            	    	}
+            	 }
+            }
+    	}
+    }
+
+    kvm_instance_t *kvm = kvm_get_instance(vmi);
+    kvm ->shared_memory_snapshot_kernel_page_list = page_list;
+    kvm-> shared_memory_snapshot_kernel_page_head = page_head;
+
+	return VMI_SUCCESS;
+}
+
+status_t
+walkthrough_kernel_pagetable(
+    vmi_instance_t vmi,
+    addr_t dtb)
+{
+    if (vmi->page_mode == VMI_PM_LEGACY) {
+        return walkthrough_kernel_pagetable_nopae(vmi, dtb);
+    }
+    else if (vmi->page_mode == VMI_PM_PAE) {
+    	dbprint("VMI_PM_PAE unsupported during walkthrough_kernel_pagetable\n");
+        return VMI_FAILURE;
+    }
+    else if (vmi->page_mode == VMI_PM_IA32E) {
+    	dbprint("VMI_PM_IA32E unsupported during walkthrough_kernel_pagetable\n");
+        return VMI_FAILURE;
+    }
+    else {
+        errprint("Invalid paging mode during walkthrough_kernel_pagetable\n");
+        return VMI_FAILURE;
+    }
+}
+
+status_t
+kvm_replicate_snapshot_kernel_pagetable(
+    vmi_instance_t vmi)
+{
+	reg_t cr3 = 0;
+
+    if (vmi->kpgd) {
+        cr3 = vmi->kpgd;
+    }
+    else {
+        driver_get_vcpureg(vmi, &cr3, CR3, 0);
+    }
+    if (!cr3) {
+        dbprint("--early bail on v2p lookup because cr3 is zero\n");
+        return 0;
+    }
+    else {
+        if (VMI_SUCCESS ==  walkthrough_kernel_pagetable(vmi, cr3)) {
+            kvm_instance_t *kvm = kvm_get_instance(vmi);
+            return map_page_table(vmi, kvm ->shared_memory_snapshot_kernel_page_list,  kvm-> shared_memory_snapshot_kernel_page_head);
+        }
+        return VMI_FAILURE;
+
+    }
+}
+
+void*
+kvm_get_snapshot_kernel_vaddr_base(
+	vmi_instance_t vmi)
+{
+	return kvm_get_instance(vmi)->shared_memory_snapshot_kernel_vaddr_base;
+}
+
 #endif
 
 //////////////////////////////////////////////////////////////////////
@@ -1331,6 +1581,21 @@ kvm_destroy_snapshot(
 {
     return VMI_FAILURE;
 }
+
+status_t
+kvm_replicate_snapshot_kernel_pagetable(
+    vmi_instance_t vmi)
+{
+	return VMI_FAILURE;
+}
+
+void*
+kvm_get_snapshot_kernel_vaddr_base(
+	vmi_instance_t vmi)
+{
+    return NULL;
+}
+
 #endif
 
 #endif /* ENABLE_KVM */
