@@ -87,6 +87,42 @@ vmi_read_pa(
 }
 
 size_t
+vmi_read_va_tevat(
+    vmi_instance_t vmi,
+    addr_t vaddr,
+    vmi_pid_t pid,
+    void *buf,
+    size_t count)
+{
+    unsigned char *memory = NULL;
+    addr_t paddr = 0;
+    addr_t pfn = 0;
+    addr_t offset = 0;
+    size_t buf_offset = 0;
+
+    if (NULL == buf) {
+        dbprint("--%s: buf passed as NULL, returning without read\n",
+                __FUNCTION__);
+        return 0;
+    }
+
+    while (count > 0) {
+#if ENABLE_SHM_SNAPSHOT == 1
+    const void* guest_vmem_base;
+    uint64_t size = driver_get_dgvma(vmi, pid, vaddr, &guest_vmem_base);
+    if (count <= size) {
+        memcpy(buf, guest_vmem_base, count);
+        return count;
+    } else {
+        memcpy(buf, guest_vmem_base, size);
+        return size;
+    }
+#endif
+    }
+    return 0;
+}
+
+size_t
 vmi_read_va(
     vmi_instance_t vmi,
     addr_t vaddr,

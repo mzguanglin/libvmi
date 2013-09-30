@@ -96,9 +96,11 @@ status_t driver_destroy_shm_snapshot_vm(
     vmi_instance_t vmi);
 const void * driver_get_dgpma(
     vmi_instance_t vmi);
-const void* driver_get_dgvma(
+size_t driver_get_dgvma(
     vmi_instance_t vmi,
-    pid_t pid);
+    pid_t pid,
+    addr_t vaddr,
+    const void** guest_vmem_base);
 #endif
 status_t driver_events_listen(
     vmi_instance_t vmi,

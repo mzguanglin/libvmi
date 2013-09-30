@@ -475,10 +475,6 @@ addr_t vmi_pagetable_lookup (vmi_instance_t vmi, addr_t dtb, addr_t vaddr)
 }
 
 #if ENABLE_SHM_SNAPSHOT == 1
-const void* vmi_get_dgvma(vmi_instance_t vmi, pid_t pid)
-{
-    return driver_get_dgvma(vmi, pid);
-}
 #endif
 
 /* expose virtual to physical mapping for kernel space via api call */

@@ -29,25 +29,25 @@
 #include <libvirt/virterror.h>
 
 #if ENABLE_SHM_SNAPSHOT == 1
-struct tevat_mapping_chunk_entry_struct{
-	addr_t vaddr_begin;
-	addr_t vaddr_end;
-	addr_t paddr_begin;
-	addr_t paddr_end;
-	struct tevat_mapping_chunk_entry_struct* next;
-};
-typedef struct tevat_mapping_chunk_entry_struct tevat_mapping_chunk_entry;
-typedef struct tevat_mapping_chunk_entry_struct *tevat_mapping_chunk_entry_t;
 
-struct tevat_mapping_table_entry_struct {
-	pid_t pid;
-	tevat_mapping_chunk_entry_t chunks;
-	uint64_t vaddr_space_size;
-	void* vaddr_base;
-	struct tevat_mapping_table_entry_struct* next;
-};
-typedef struct tevat_mapping_table_entry_struct tevat_mapping_table_entry;
-typedef struct tevat_mapping_table_entry_struct *tevat_mapping_table_entry_t;
+// TEVAT virtual memory mapping chunk
+typedef struct tevat_chunk_struct {
+    addr_t vaddr_begin;
+    addr_t vaddr_end;
+    addr_t paddr_begin;
+    addr_t paddr_end;
+    void * mapping;
+    struct tevat_chunk_struct* next;
+} tevat_chunk, *tevat_chunk_t;
+
+// TEVAT virtual memory mapping table which
+// incorporates a list of mapping chunks of a pid.
+typedef struct tevat_table_struct {
+    pid_t pid;
+    tevat_chunk_t chunks;
+    struct tevat_table_struct* next;
+} tevat_table, *tevat_table_t;
+
 #endif
 
 typedef struct kvm_instance {
@@ -63,7 +63,7 @@ typedef struct kvm_instance {
     int   shm_snapshot_fd;    /** file description of the shared memory snapshot device */
     void *shm_snapshot_map;   /** mapped shared memory region */
     char *shm_snapshot_cpu_regs;  /** string of dumped CPU registers */
-    tevat_mapping_table_entry_t shm_snapshot_tevat_mapping_table; /** TEVAT mappping table link list of all pids */
+    tevat_table_t shm_snapshot_tevat_tables; /** TEVAT mappping table link list of all pids */
 #endif
 } kvm_instance_t;
 
@@ -134,7 +134,9 @@ status_t kvm_destroy_shm_snapshot(
     vmi_instance_t vmi);
 const void * kvm_get_dgpma(
     vmi_instance_t vmi);
-const void* kvm_get_dgvma(
+size_t kvm_get_dgvma(
     vmi_instance_t vmi,
-    pid_t pid);
+    pid_t pid,
+    addr_t vaddr,
+    const void** guest_vmem_base);
 #endif

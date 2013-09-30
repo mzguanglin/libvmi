@@ -382,12 +382,33 @@ munmap_unlink_shm_snapshot_dev(
     return VMI_SUCCESS;
 }
 
-status_t map_tevat_mapping_table(
+status_t map_tevat_chunks(
     vmi_instance_t vmi,
-    tevat_mapping_chunk_entry_t page_chunk_list,
-    addr_t size,
-    void** vaddr_base_ptr)
+    tevat_chunk_t chunk_list)
 {
+    // list
+    /*
+    if (NULL != page_chunk_list) {
+        do {
+            void* paddr = vmi_translate_kv2p(vmi, page_chunk_list->vaddr_begin);
+            if (paddr == page_chunk_list->paddr_begin)
+            printf("map va: %llx - %llx, pa: %llx - %llx, size: %dKB\n",
+                page_chunk_list->vaddr_begin, page_chunk_list->vaddr_end,
+                page_chunk_list->paddr_begin, page_chunk_list->paddr_end,
+                (page_chunk_list->vaddr_end - page_chunk_list->vaddr_begin+1)>>10);
+            else
+                printf("errormap va: %llx - %llx, pa: %llx - %llx, vmipa: %llx , size: %dKB\n",
+                    page_chunk_list->vaddr_begin, page_chunk_list->vaddr_end,
+                    page_chunk_list->paddr_begin, page_chunk_list->paddr_end,
+                    paddr,
+                    (page_chunk_list->vaddr_end - page_chunk_list->vaddr_begin+1)>>10);
+
+            page_chunk_list = page_chunk_list->next;
+        } while (NULL!= page_chunk_list);
+        //return VMI_FAILURE;
+    }*/
+
+/*
     // find a large enough vaddr base
     // TODO: we don't actually need such a "big" available space,
     //    because of the large holes among the guest virtual address
@@ -406,51 +427,55 @@ status_t map_tevat_mapping_table(
         errprint("Failed to find large enough vaddr space, size: %d GB\n", size>>30);
         perror("");
         return VMI_FAILURE;
-    }
+    }*/
 
     // map addresses
-    if (NULL != page_chunk_list) {
+    if (NULL != chunk_list) {
         do {
             dbprint("map va: %lldM - %lldM, pa: %lldM - %lldM, size: %dKB\n",
-                page_chunk_list->vaddr_begin>>20, page_chunk_list->vaddr_end>>20,
-                page_chunk_list->paddr_begin>>20, page_chunk_list->paddr_end>>20,
-                (page_chunk_list->vaddr_end - page_chunk_list->vaddr_begin+1)>>10);
+                chunk_list->vaddr_begin>>20, chunk_list->vaddr_end>>20,
+                chunk_list->paddr_begin>>20, chunk_list->paddr_end>>20,
+                (chunk_list->vaddr_end - chunk_list->vaddr_begin+1)>>10);
+            printf("map va: %llx - %x, pa: %x - %llx, size: %dKB\n",
+                chunk_list->vaddr_begin, chunk_list->vaddr_end,
+                chunk_list->paddr_begin, chunk_list->paddr_end,
+                (chunk_list->vaddr_end - chunk_list->vaddr_begin+1)>>10);
 
-            void *map = mmap(*vaddr_base_ptr + page_chunk_list->vaddr_begin,  // addr
-                page_chunk_list->vaddr_end - page_chunk_list->vaddr_begin + 1,   // len
+            void *map = mmap(NULL,  // addr
+                chunk_list->vaddr_end - chunk_list->vaddr_begin + 1,   // len
                 PROT_READ,   // prot
-                MAP_PRIVATE | MAP_NORESERVE | MAP_POPULATE | MAP_FIXED,  // flags
+                MAP_PRIVATE | MAP_NORESERVE | MAP_POPULATE,  // flags
                 kvm_get_instance(vmi)->shm_snapshot_fd,    // file descriptor
-                page_chunk_list->paddr_begin);  // offset
+                chunk_list->paddr_begin);  // offset
 
             if (MAP_FAILED == map) {
                 perror("Failed to mmap page");
                 return VMI_FAILURE;
             }
-            page_chunk_list = page_chunk_list->next;
-        } while (NULL!= page_chunk_list);
+            chunk_list->mapping = map;
+            chunk_list = chunk_list->next;
+        } while (NULL!= chunk_list);
     }
     return VMI_SUCCESS;
 }
 
-void add_tevat_page_chunk_to_list(
-    vmi_instance_t vmi,
-    tevat_mapping_chunk_entry_t *page_chunk_list,
-    tevat_mapping_chunk_entry_t *head,
+void append_tevat_chunk(
+    tevat_chunk_t *chunk_list,
+    tevat_chunk_t *head,
     addr_t start_vaddr,
     addr_t end_vaddr,
     addr_t start_paddr,
     addr_t end_paddr)
 {
     // the first chunk
-    if (NULL == *page_chunk_list) {
-        *page_chunk_list = malloc(sizeof(tevat_mapping_chunk_entry));
-        memset(*page_chunk_list, 0, sizeof(tevat_mapping_chunk_entry));
-        (*page_chunk_list)->vaddr_begin = start_vaddr;
-        (*page_chunk_list)->vaddr_end = end_vaddr;
-        (*page_chunk_list)->paddr_begin = start_paddr;
-        (*page_chunk_list)->paddr_end = end_paddr;
-        (*head) = *page_chunk_list;
+    if (NULL == *chunk_list) {
+        *chunk_list = malloc(sizeof(tevat_chunk));
+        memset(*chunk_list, 0, sizeof(tevat_chunk));
+        (*chunk_list)->vaddr_begin = start_vaddr;
+        (*chunk_list)->vaddr_end = end_vaddr;
+        (*chunk_list)->paddr_begin = start_paddr;
+        (*chunk_list)->paddr_end = end_paddr;
+        (*head) = *chunk_list;
     } else {
         if (start_vaddr == (*head)->vaddr_end + 1 && start_paddr == (*head)->paddr_end + 1) {
             // merge continuous chunk
@@ -458,8 +483,8 @@ void add_tevat_page_chunk_to_list(
             (*head)->paddr_end = end_paddr;
         } else {
             // new entry
-            tevat_mapping_chunk_entry_t new_page = malloc(sizeof(tevat_mapping_chunk_entry));
-            memset(new_page, 0, sizeof(tevat_mapping_chunk_entry));
+            tevat_chunk_t new_page = malloc(sizeof(tevat_chunk));
+            memset(new_page, 0, sizeof(tevat_chunk));
             new_page->vaddr_begin = start_vaddr;
             new_page->vaddr_end = end_vaddr;
             new_page->paddr_begin = start_paddr;
@@ -474,11 +499,11 @@ status_t
 walkthrough_shm_snapshot_pagetable_nopae(
     vmi_instance_t vmi,
     addr_t dtb,
-    tevat_mapping_chunk_entry_t* page_chunk_list_ptr,
-    tevat_mapping_chunk_entry_t* page_chunk_head_ptr)
+    tevat_chunk_t* page_chunk_list_ptr,
+    tevat_chunk_t* page_chunk_head_ptr)
 {
-    tevat_mapping_chunk_entry_t page_list = *page_chunk_list_ptr;
-    tevat_mapping_chunk_entry_t page_head = *page_chunk_head_ptr;
+    tevat_chunk_t page_list = *page_chunk_list_ptr;
+    tevat_chunk_t page_head = *page_chunk_head_ptr;
 
     //read page directory (1 page size)
     addr_t pd_pfn = dtb >> vmi->page_shift;
@@ -499,7 +524,7 @@ walkthrough_shm_snapshot_pagetable_nopae(
                 addr_t start_paddr = pde & 0xFFC00000; // left 10 bits
                 addr_t end_paddr = start_paddr | 0x3FFFFF; // begin + 4mb
                 if (start_paddr < vmi->size) {
-                    add_tevat_page_chunk_to_list(vmi, &page_list, &page_head,
+                    append_tevat_chunk(&page_list, &page_head,
                         start_vaddr, end_vaddr, start_paddr, end_paddr);
                 }
             }
@@ -522,7 +547,7 @@ walkthrough_shm_snapshot_pagetable_nopae(
                         addr_t start_paddr = pte_pfn_nopae(pte); // left 20 bits
                         addr_t end_paddr = start_paddr | 0xFFF; // begin + 4kb
                         if (start_paddr < vmi->size) {
-                            add_tevat_page_chunk_to_list(vmi, &page_list, &page_head,
+                            append_tevat_chunk(&page_list, &page_head,
                                 start_vaddr, end_vaddr, start_paddr, end_paddr);
                         }
                     }
@@ -539,11 +564,11 @@ status_t
 walkthrough_shm_snapshot_pagetable_pae(
     vmi_instance_t vmi,
     addr_t dtb,
-    tevat_mapping_chunk_entry_t* page_chunk_list_ptr,
-    tevat_mapping_chunk_entry_t* page_chunk_head_ptr)
+    tevat_chunk_t* page_chunk_list_ptr,
+    tevat_chunk_t* page_chunk_head_ptr)
 {
-    tevat_mapping_chunk_entry_t page_list = *page_chunk_list_ptr;
-    tevat_mapping_chunk_entry_t page_head = *page_chunk_head_ptr;
+    tevat_chunk_t page_list = *page_chunk_list_ptr;
+    tevat_chunk_t page_head = *page_chunk_head_ptr;
 
     // read page directory pointer page (4 entries, 64bit per entry)
     addr_t pdpt_pfn = dtb >> vmi->page_shift;
@@ -577,7 +602,7 @@ walkthrough_shm_snapshot_pagetable_pae(
                         addr_t end_paddr = start_paddr | 0x1FFFFF; // begin + 2mb
 
                         if (start_paddr < vmi->size) {
-                            add_tevat_page_chunk_to_list(vmi, &page_list, &page_head,
+                            append_tevat_chunk(&page_list, &page_head,
                                 start_vaddr, end_vaddr, start_paddr, end_paddr);
                         }
                     }
@@ -602,7 +627,7 @@ walkthrough_shm_snapshot_pagetable_pae(
                                 addr_t end_paddr = start_paddr | 0xFFF; // begin + 4kb
 
                                 if (start_paddr < vmi->size) {
-                                    add_tevat_page_chunk_to_list(vmi, &page_list,
+                                    append_tevat_chunk(&page_list,
                                         &page_head, start_vaddr, end_vaddr,
                                         start_paddr, end_paddr);
                                 }
@@ -622,11 +647,11 @@ status_t
 walkthrough_shm_snapshot_pagetable_ia32e(
     vmi_instance_t vmi,
     addr_t dtb,
-    tevat_mapping_chunk_entry_t* page_chunk_list_ptr,
-    tevat_mapping_chunk_entry_t* page_chunk_head_ptr)
+    tevat_chunk_t* page_chunk_list_ptr,
+    tevat_chunk_t* page_chunk_head_ptr)
 {
-    tevat_mapping_chunk_entry_t page_list = *page_chunk_list_ptr;
-    tevat_mapping_chunk_entry_t page_head = *page_chunk_head_ptr;
+    tevat_chunk_t page_list = *page_chunk_list_ptr;
+    tevat_chunk_t page_head = *page_chunk_head_ptr;
 
     // read PML4 table (512 * 64-bit entries)
     addr_t pml4t_pfn = get_bits_51to12(dtb) >> vmi->page_shift;
@@ -660,7 +685,7 @@ walkthrough_shm_snapshot_pagetable_ia32e(
                         addr_t end_paddr = start_paddr | 0xFFFFFFFF; // begin + 1GB
 
                         if (start_paddr < vmi->size) {
-                            add_tevat_page_chunk_to_list(vmi, &page_list, &page_head,
+                            append_tevat_chunk(&page_list, &page_head,
                                 start_vaddr, end_vaddr, start_paddr, end_paddr);
                         }
 
@@ -691,7 +716,7 @@ walkthrough_shm_snapshot_pagetable_ia32e(
                                     addr_t end_paddr = start_paddr | 0x1FFFFF; // begin + 2mb
 
                                     if (start_paddr < vmi->size) {
-                                        add_tevat_page_chunk_to_list(vmi, &page_list,
+                                        append_tevat_chunk(&page_list,
                                             &page_head, start_vaddr, end_vaddr,
                                             start_paddr, end_paddr);
                                     }
@@ -722,7 +747,7 @@ walkthrough_shm_snapshot_pagetable_ia32e(
                                                 | 0xFFF; // begin + 4kb
 
                                             if (start_paddr < vmi->size) {
-                                                add_tevat_page_chunk_to_list(vmi,
+                                                append_tevat_chunk(
                                                     &page_list, &page_head,
                                                     start_vaddr, end_vaddr,
                                                     start_paddr, end_paddr);
@@ -746,8 +771,8 @@ status_t
 walkthrough_shm_snapshot_pagetable(
     vmi_instance_t vmi,
     addr_t dtb,
-    tevat_mapping_chunk_entry_t* page_chunk_list_ptr,
-    tevat_mapping_chunk_entry_t* page_chunk_head_ptr)
+    tevat_chunk_t* page_chunk_list_ptr,
+    tevat_chunk_t* page_chunk_head_ptr)
 {
     if (vmi->page_mode == VMI_PM_LEGACY) {
         return walkthrough_shm_snapshot_pagetable_nopae(vmi, dtb,
@@ -769,20 +794,20 @@ walkthrough_shm_snapshot_pagetable(
 }
 
 status_t
-insert_tevat_mapping_table_entry(
+append_tevat_table(
     vmi_instance_t vmi,
-    tevat_mapping_table_entry_t entry)
+    tevat_table_t entry)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
     // the first tevat page table
-    if (kvm->shm_snapshot_tevat_mapping_table == NULL) {
-        kvm->shm_snapshot_tevat_mapping_table = entry;
+    if (kvm->shm_snapshot_tevat_tables == NULL) {
+        kvm->shm_snapshot_tevat_tables = entry;
         return VMI_SUCCESS;
     }
     else {
         // append to the existed page table link list
-        tevat_mapping_table_entry_t head = kvm->shm_snapshot_tevat_mapping_table;
+        tevat_table_t head = kvm->shm_snapshot_tevat_tables;
         while (NULL != head->next) {
             head = head->next;
         }
@@ -792,30 +817,25 @@ insert_tevat_mapping_table_entry(
 }
 
 status_t
-setup_tevat_mapping_table(
+setup_tevat_table(
     vmi_instance_t vmi,
     pid_t pid,
     addr_t dtb)
 {
-    tevat_mapping_chunk_entry_t page_chunk_list = NULL;
-    tevat_mapping_chunk_entry_t page_chunk_head = NULL;
+    tevat_chunk_t page_chunk_list = NULL;
+    tevat_chunk_t page_chunk_head = NULL;
 
     if (VMI_SUCCESS ==
         walkthrough_shm_snapshot_pagetable(vmi, dtb, &page_chunk_list, &page_chunk_head))
     {
-        addr_t vaddr_space_size = page_chunk_head->vaddr_end - page_chunk_list->vaddr_begin;
-        void* vaddr_base = NULL;
-
         if (VMI_SUCCESS ==
-            map_tevat_mapping_table(vmi, page_chunk_list, vaddr_space_size, &vaddr_base))
+            map_tevat_chunks(vmi, page_chunk_list))
         {
-            tevat_mapping_table_entry_t guest_vaddr_entry = malloc(sizeof(tevat_mapping_table_entry));
+            tevat_table_t guest_vaddr_entry = malloc(sizeof(tevat_table));
             guest_vaddr_entry->pid = pid;
-            guest_vaddr_entry->vaddr_base = vaddr_base;
             guest_vaddr_entry->chunks = page_chunk_list;
-            guest_vaddr_entry->vaddr_space_size = vaddr_space_size;
             guest_vaddr_entry->next = NULL;
-            return insert_tevat_mapping_table_entry(vmi, guest_vaddr_entry);
+            return append_tevat_table(vmi, guest_vaddr_entry);
         } else {
             return VMI_FAILURE;
         }
@@ -823,11 +843,25 @@ setup_tevat_mapping_table(
     return VMI_FAILURE;
 }
 
+/**
+ * Transparent Efficient Virtual Address Translation: mapping-based guest
+ * address translation bypassing vmi_translate_v2p(). It acts as a smart
+ * backend of vmi_read_va().
+ * Note:
+ * 1. It is dependent on shm-snapshot;
+ * 2. It costs several hundred milliseconds to create a TEVAT mapping
+ *    of a specific pid;
+ * 3. The TEVAT mappings will stay until vmi_shm_snapshot_destroy().
+ *
+ * @param[in] vmi LibVMI instance
+ * @param[in] pid Pid of the virtual address space (0 for kernel)
+ */
 status_t
-create_tevat_mapping_table(
+create_tevat(
     vmi_instance_t vmi,
     pid_t pid)
 {
+    addr_t dtb = NULL;
     if (VMI_SUCCESS == test_using_shm_snapshot(vmi)) {
         // kernel page table
         if (0 == pid) {
@@ -844,20 +878,18 @@ create_tevat_mapping_table(
                 return VMI_FAILURE;
             }
             else {
-                return setup_tevat_mapping_table(vmi, pid, cr3);
+                dtb = cr3;
             }
         }
         else {
             // user process page table
-            addr_t dtb = vmi_pid_to_dtb(vmi, pid);
+            dtb = vmi_pid_to_dtb(vmi, pid);
             if (!dtb) {
                 dbprint("--early bail on TEVAT create because dtb is zero\n");
                 return VMI_FAILURE;
             }
-            else {
-                return setup_tevat_mapping_table(vmi, pid, dtb);
-            }
         }
+        return setup_tevat_table(vmi, pid, dtb);
     }
     else {
         errprint("can't create TEVAT because shm-snapshot is not using.\n");
@@ -865,15 +897,15 @@ create_tevat_mapping_table(
     }
 }
 
-tevat_mapping_table_entry_t
-get_tevat_mapping_table_entry(
+tevat_table_t
+get_tevat_table(
     vmi_instance_t vmi,
     pid_t pid)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    if (NULL != kvm->shm_snapshot_tevat_mapping_table) {
-        tevat_mapping_table_entry_t tmp = kvm->shm_snapshot_tevat_mapping_table;
+    if (NULL != kvm->shm_snapshot_tevat_tables) {
+        tevat_table_t tmp = kvm->shm_snapshot_tevat_tables;
         while (NULL != tmp) {
             if (pid == tmp->pid)
                 return tmp;
@@ -883,22 +915,42 @@ get_tevat_mapping_table_entry(
     return NULL;
 }
 
-status_t
-free_chunks_of_tevat_mapping_table_entry(
-    vmi_instance_t vmi,
-    tevat_mapping_table_entry_t tevat_mt_entry)
+/**
+ * Get the mapping address of a given virtual address.
+ */
+uint64_t
+get_tevat_mapping_vaddr(
+    tevat_chunk_t chunks,
+    addr_t vaddr,
+    const void** mapping_vaddr)
 {
-    tevat_mapping_chunk_entry_t tail = tevat_mt_entry->chunks;
+    if (NULL != chunks) {
+        tevat_chunk_t tmp = chunks;
+        while (NULL != tmp) {
+            if (vaddr >= tmp->vaddr_begin && vaddr <= tmp->vaddr_end) {
+                uint64_t size = tmp->vaddr_end - vaddr + 1;
+                *mapping_vaddr = tmp->mapping + vaddr - tmp->vaddr_begin;
+                return size;
+            }
+            tmp = tmp->next;
+        }
+    }
+    return 0;
+}
+
+status_t
+munmap_tevat_chunks(
+    tevat_chunk_t tevat_mt_entry)
+{
+    tevat_chunk_t tail = tevat_mt_entry;
     if (NULL != tail) {
         do {
-            tevat_mapping_chunk_entry_t tmp = tail->next;
-            munmap(tevat_mt_entry->vaddr_base + tail->vaddr_begin,
+            tevat_chunk_t tmp = tail->next;
+            munmap(tail->mapping,
                 (tail->vaddr_end - tail->vaddr_begin + 1));
             free(tail);
             tail = tmp;
         } while (NULL != tail);
-        tevat_mt_entry->chunks = NULL;
-        tevat_mt_entry->vaddr_base = NULL;
         return VMI_SUCCESS;
     }
     else {
@@ -908,28 +960,28 @@ free_chunks_of_tevat_mapping_table_entry(
 }
 
 status_t
-delete_tevat_mapping_table_entry(
+delete_tevat_table(
     vmi_instance_t vmi,
-    tevat_mapping_table_entry_t tevat_pt_entry)
+    tevat_table_t tevat_table)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
     // the 1st entry matches
-    if (NULL != kvm->shm_snapshot_tevat_mapping_table
-        && tevat_pt_entry == kvm->shm_snapshot_tevat_mapping_table) {
-        tevat_mapping_table_entry_t tmp = kvm->shm_snapshot_tevat_mapping_table;
-        kvm->shm_snapshot_tevat_mapping_table = tmp->next;
+    if (NULL != kvm->shm_snapshot_tevat_tables
+        && tevat_table == kvm->shm_snapshot_tevat_tables) {
+        tevat_table_t tmp = kvm->shm_snapshot_tevat_tables;
+        kvm->shm_snapshot_tevat_tables = tmp->next;
         free(tmp);
         return VMI_SUCCESS;
     }
     // there are two or more entries
-    else if (NULL != kvm->shm_snapshot_tevat_mapping_table
-        && NULL != kvm->shm_snapshot_tevat_mapping_table->next) {
-        tevat_mapping_table_entry_t tmp[2];
-        tmp[0] = kvm->shm_snapshot_tevat_mapping_table;
-        tmp[1] = kvm->shm_snapshot_tevat_mapping_table->next;
+    else if (NULL != kvm->shm_snapshot_tevat_tables
+        && NULL != kvm->shm_snapshot_tevat_tables->next) {
+        tevat_table_t tmp[2];
+        tmp[0] = kvm->shm_snapshot_tevat_tables;
+        tmp[1] = kvm->shm_snapshot_tevat_tables->next;
         while (NULL != tmp[1]) {
-            if (tevat_pt_entry == tmp[1]) {
+            if (tevat_table == tmp[1]) {
                 tmp[0]->next = tmp[1]->next;
                 free(tmp[1]);
                 return VMI_SUCCESS;
@@ -944,31 +996,37 @@ delete_tevat_mapping_table_entry(
         return VMI_FAILURE;
 }
 
+/**
+ * Destroy TEVAT facilities.
+ *  1. munmap TEVAT trunks;
+ *  2. delete TEVAT table.
+ */
 status_t
-destroy_tevat_mappings(
+destroy_tevat(
     vmi_instance_t vmi)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    tevat_mapping_table_entry_t tail = kvm->shm_snapshot_tevat_mapping_table;
+    tevat_table_t tail = kvm->shm_snapshot_tevat_tables;
     if (NULL != tail) {
         do {
-            tevat_mapping_table_entry_t tmp = tail->next;
+            tevat_table_t tmp = tail->next;
 
             if (VMI_SUCCESS
-                != free_chunks_of_tevat_mapping_table_entry(vmi, tail)) {
+                != munmap_tevat_chunks(tail->chunks)) {
                 errprint("fail to free_chunks_of_tevat_mapping_table_entry\n");
                 return VMI_FAILURE;
             }
 
-            if (VMI_SUCCESS != delete_tevat_mapping_table_entry(vmi, tail)) {
+            tail->chunks = NULL;
+
+            if (VMI_SUCCESS != delete_tevat_table(vmi, tail)) {
                 errprint("fail to delete_tevat_mapping_table_entry\n");
                 return VMI_FAILURE;
             }
             tail = tmp;
-        }
-        while (NULL != tail);
-        kvm->shm_snapshot_tevat_mapping_table = NULL;
+        } while (NULL != tail);
+        kvm->shm_snapshot_tevat_tables = NULL;
     }
     return VMI_SUCCESS;
 }
@@ -1748,7 +1806,7 @@ status_t
 kvm_destroy_shm_snapshot(
     vmi_instance_t vmi)
 {
-    destroy_tevat_mappings(vmi);
+    destroy_tevat(vmi);
     kvm_teardown_shm_snapshot_mode(vmi);
 
     return kvm_setup_live_mode(vmi);
@@ -1759,32 +1817,30 @@ const void * kvm_get_dgpma(
     return kvm_get_instance(vmi)->shm_snapshot_map;
 }
 
-const void*
+
+size_t
 kvm_get_dgvma(
     vmi_instance_t vmi,
-    pid_t pid)
+    pid_t pid,
+    addr_t vaddr,
+    const void** guest_mapping_vaddr)
 {
-    tevat_mapping_table_entry_t tevat_pt_entry = get_tevat_mapping_table_entry(
-        vmi, pid);
+    tevat_table_t tevat_pt_entry = get_tevat_table(vmi, pid);
 
-    // TEVAT mappings exists
-    if (NULL != tevat_pt_entry) {
-        return tevat_pt_entry->vaddr_base;
-    }
-    else {
-        // create new TEVAT mappings
-        if (VMI_SUCCESS == create_tevat_mapping_table(vmi, pid)) {
-            tevat_mapping_table_entry_t new_entry =
-                get_tevat_mapping_table_entry(vmi, pid);
-            if (NULL != new_entry)
-                return new_entry->vaddr_base;
-            else
-                return NULL;
+    // TEVAT table is not existed
+    if (NULL == tevat_pt_entry) {
+        // create new TEVAT mapping
+        if (VMI_SUCCESS == create_tevat(vmi, pid)) {
+            tevat_pt_entry = get_tevat_table(vmi, pid);
         }
         else {
-            return NULL;
+            return 0; // cannot create new TEVAT mapping
         }
     }
+
+    // get mapping vaddr
+    return get_tevat_mapping_vaddr(tevat_pt_entry->chunks, vaddr,
+        guest_mapping_vaddr);
 }
 
 #endif

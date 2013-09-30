@@ -56,7 +56,7 @@ extern "C" {
 //#define VMI_DEBUG
 
 /* enable or disable the address cache (v2p, pid, etc) */
-#define ENABLE_ADDRESS_CACHE 1
+#define ENABLE_ADDRESS_CACHE 0
 
 /* enable or disable the page cache */
 #define ENABLE_PAGE_CACHE 1
@@ -502,6 +502,13 @@ size_t vmi_read_ksym(
  * @return The number of bytes read.
  */
 size_t vmi_read_va(
+    vmi_instance_t vmi,
+    addr_t vaddr,
+    vmi_pid_t pid,
+    void *buf,
+    size_t count);
+
+size_t vmi_read_va_tevat(
     vmi_instance_t vmi,
     addr_t vaddr,
     vmi_pid_t pid,
