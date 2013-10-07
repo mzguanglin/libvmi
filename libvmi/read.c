@@ -107,7 +107,7 @@ vmi_read_va_tevat(
     }
 
     while (count > 0) {
-#if ENABLE_SHM_SNAPSHOT == 1
+/*#if ENABLE_SHM_SNAPSHOT == 1
     const void* guest_vmem_base;
     uint64_t size = driver_get_dgvma(vmi, pid, vaddr, &guest_vmem_base);
     if (count <= size) {
@@ -117,9 +117,14 @@ vmi_read_va_tevat(
         memcpy(buf, guest_vmem_base, size);
         return size;
     }
-#endif
+#endif*/
     }
     return 0;
+}
+
+size_t vmi_get_dgvma(
+    vmi_instance_t vmi, addr_t vaddr, pid_t pid, void **buf_ptr, size_t count) {
+    return driver_get_dgvma(vmi, vaddr, pid, buf_ptr, count);
 }
 
 size_t

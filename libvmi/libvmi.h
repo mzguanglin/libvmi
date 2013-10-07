@@ -59,7 +59,7 @@ extern "C" {
 #define ENABLE_ADDRESS_CACHE 0
 
 /* enable or disable the page cache */
-#define ENABLE_PAGE_CACHE 1
+#define ENABLE_PAGE_CACHE 0
 
 /* max number of pages held in page cache */
 #define MAX_PAGE_CACHE_SIZE 512
@@ -1352,9 +1352,8 @@ const void * vmi_get_dgpma(
  * @param[in] pid Pid of the virtual address space (0 for kernel)
  * @return The base address of DGVMA
  */
-const void * vmi_get_dgvma(
-    vmi_instance_t vmi,
-    pid_t pid);
+size_t vmi_get_dgvma(
+    vmi_instance_t vmi, addr_t vaddr, pid_t pid, void **buf_ptr, size_t count);
 #endif
 
 /**

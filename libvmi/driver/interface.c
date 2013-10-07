@@ -115,12 +115,13 @@ struct driver_instance {
 	const void * (
 	*get_dgpma_ptr) (
     vmi_instance_t);
-    const void* (
+    size_t (
     *get_dgvma_ptr) (
     vmi_instance_t,
-    pid_t,
     addr_t,
-    const void**);
+    pid_t,
+    void**,
+    size_t);
     status_t (
     *events_listen_ptr)(
     vmi_instance_t,
@@ -725,22 +726,24 @@ const void * driver_get_dgpma(
     }
 }
 
-size_t driver_get_dgvma(
-                vmi_instance_t vmi,
-    pid_t pid,
+size_t
+driver_get_dgvma(
+    vmi_instance_t vmi,
     addr_t vaddr,
-    const void** guest_vmem_base)
+    pid_t pid,
+    void** guest_mapping_vaddr,
+    size_t count)
 {
     driver_instance_t ptrs = driver_get_instance(vmi);
 
     if (NULL != ptrs && NULL != ptrs->get_dgvma_ptr) {
-        return ptrs->get_dgvma_ptr(vmi, pid, vaddr, guest_vmem_base);
+        return ptrs->get_dgvma_ptr(vmi, vaddr, pid, guest_mapping_vaddr, count);
     }
     else {
         dbprint("WARNING: driver_get_dgvma function not implemented.\n");
-        return NULL;
+        return 0;
     }
-    return NULL;
+    return 0;
 }
 #endif
 

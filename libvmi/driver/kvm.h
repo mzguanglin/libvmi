@@ -30,21 +30,30 @@
 
 #if ENABLE_SHM_SNAPSHOT == 1
 
-// TEVAT virtual memory mapping chunk
-typedef struct tevat_chunk_struct {
+// TEVAT physical memory mapping chunk
+typedef struct tevat_paddr_chunk_struct {
     addr_t vaddr_begin;
     addr_t vaddr_end;
     addr_t paddr_begin;
     addr_t paddr_end;
     void * mapping;
-    struct tevat_chunk_struct* next;
-} tevat_chunk, *tevat_chunk_t;
+    struct tevat_paddr_chunk_struct* next;
+} tevat_paddr_chunk, *tevat_paddr_chunk_t;
+
+// TEVAT virtual memory mapping chunk
+typedef struct tevat_vaddr_chunk_struct {
+    addr_t vaddr_begin;
+    addr_t vaddr_end;
+    tevat_paddr_chunk_t paddr_chunks;
+    void * mapping;
+    struct tevat_vaddr_chunk_struct* next;
+} tevat_vaddr_chunk, *tevat_vaddr_chunk_t;
 
 // TEVAT virtual memory mapping table which
 // incorporates a list of mapping chunks of a pid.
 typedef struct tevat_table_struct {
     pid_t pid;
-    tevat_chunk_t chunks;
+    tevat_vaddr_chunk_t vaddr_chunks;
     struct tevat_table_struct* next;
 } tevat_table, *tevat_table_t;
 
@@ -136,7 +145,8 @@ const void * kvm_get_dgpma(
     vmi_instance_t vmi);
 size_t kvm_get_dgvma(
     vmi_instance_t vmi,
-    pid_t pid,
     addr_t vaddr,
-    const void** guest_vmem_base);
+    pid_t pid,
+    void** guest_mapping_vaddr,
+    size_t count);
 #endif

@@ -98,9 +98,10 @@ const void * driver_get_dgpma(
     vmi_instance_t vmi);
 size_t driver_get_dgvma(
     vmi_instance_t vmi,
-    pid_t pid,
     addr_t vaddr,
-    const void** guest_vmem_base);
+    pid_t pid,
+    void** guest_mapping_vaddr,
+    size_t count);
 #endif
 status_t driver_events_listen(
     vmi_instance_t vmi,
