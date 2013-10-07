@@ -141,8 +141,11 @@ status_t kvm_create_shm_snapshot(
     vmi_instance_t vmi);
 status_t kvm_destroy_shm_snapshot(
     vmi_instance_t vmi);
-const void * kvm_get_dgpma(
-    vmi_instance_t vmi);
+size_t kvm_get_dgpma(
+        vmi_instance_t vmi,
+        addr_t paddr,
+        void** guest_mapping_paddr,
+        size_t count);
 size_t kvm_get_dgvma(
     vmi_instance_t vmi,
     addr_t vaddr,

@@ -204,9 +204,9 @@ vmi_shm_snapshot_destroy(
 	return driver_destroy_shm_snapshot_vm(vmi);
 }
 
-const void * vmi_get_dgpma(
-    vmi_instance_t vmi) {
-    return driver_get_dgpma(vmi);
+size_t vmi_get_dgpma(
+    vmi_instance_t vmi, addr_t paddr, void **buf_ptr, size_t count) {
+    return driver_get_dgpma(vmi, paddr, buf_ptr, count);
 }
 #endif
 

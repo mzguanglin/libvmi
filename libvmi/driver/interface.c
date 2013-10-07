@@ -112,9 +112,9 @@ struct driver_instance {
 	status_t (
 	*destroy_shm_snapshot_ptr) (
 	vmi_instance_t);
-	const void * (
+	size_t (
 	*get_dgpma_ptr) (
-    vmi_instance_t);
+    vmi_instance_t vmi, addr_t paddr, void **buf_ptr, size_t count);
     size_t (
     *get_dgvma_ptr) (
     vmi_instance_t,
@@ -712,18 +712,18 @@ status_t driver_destroy_shm_snapshot_vm(
     }
 }
 
-const void * driver_get_dgpma(
-    vmi_instance_t vmi)
-{
+size_t driver_get_dgpma(
+    vmi_instance_t vmi, addr_t paddr, void **buf_ptr, size_t count) {
     driver_instance_t ptrs = driver_get_instance(vmi);
 
     if (NULL != ptrs && NULL != ptrs->get_dgpma_ptr) {
-        return ptrs->get_dgpma_ptr(vmi);
+        return ptrs->get_dgpma_ptr(vmi, paddr, buf_ptr, count);
     }
     else {
         dbprint("WARNING: get_dgpma_ptr function not implemented.\n");
-        return NULL;
+        return 0;
     }
+    return 0;
 }
 
 size_t

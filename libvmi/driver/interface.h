@@ -94,8 +94,11 @@ status_t driver_shm_snapshot_vm(
     vmi_instance_t vmi);
 status_t driver_destroy_shm_snapshot_vm(
     vmi_instance_t vmi);
-const void * driver_get_dgpma(
-    vmi_instance_t vmi);
+size_t driver_get_dgpma(
+    vmi_instance_t vmi,
+    addr_t paddr,
+    void** guest_mapping_paddr,
+    size_t count);
 size_t driver_get_dgvma(
     vmi_instance_t vmi,
     addr_t vaddr,

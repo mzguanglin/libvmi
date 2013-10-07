@@ -1334,8 +1334,8 @@ status_t vmi_shm_snapshot_destroy(
  * memory bypassing vmi_read_pa().
  * If the shm-snapshot hasn't been created yet, it returns NULL.
  */
-const void * vmi_get_dgpma(
-    vmi_instance_t vmi);
+size_t vmi_get_dgpma(
+    vmi_instance_t vmi, addr_t paddr, void **buf_ptr, size_t count);
 
 /**
  * Direct Guest Virtual Memory Access: get a read-only pointer of the guest
