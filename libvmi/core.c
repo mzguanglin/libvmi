@@ -743,10 +743,11 @@ vmi_destroy(
         free(vmi->os_data);
     }
     vmi->os_data = NULL;
-    pid_cache_destroy(vmi);
-    sym_cache_destroy(vmi);
-    rva_cache_destroy(vmi);
-    v2p_cache_destroy(vmi);
+
+    pid_cache_flush(vmi);
+    sym_cache_flush(vmi);
+    rva_cache_flush(vmi);
+    v2p_cache_flush(vmi);
     memory_cache_destroy(vmi);
     if (vmi->image_type)
         free(vmi->image_type);

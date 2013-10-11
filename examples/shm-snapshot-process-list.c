@@ -176,6 +176,32 @@ int main (int argc, char **argv)
         goto error_exit;
     }
 
+
+    void* dgvma = NULL;
+    size_t size = vmi_get_dgvma(vmi, 0x10000, 0, &dgvma, 100);
+    /*
+    void* buf_va = malloc(100);
+    size_t size_va = vmi_read_va(vmi, 0x10000,0, buf_va, 100);
+    printf("dgvma size = %d, size_va = %d\n", size, size_va);
+    if (0 == memcmp(dgvma, buf_va, 100))
+        printf("vaddr consistent\n");
+    else
+        printf("vaddrinconsistent\n");
+    scanf("%d", &size);
+
+    void* dgpma = NULL;
+    size = vmi_get_dgpma(vmi, 0x10000, &dgpma, 100);
+
+                void* buf_pa = malloc(100);
+                size_t size_pa = vmi_read_pa(vmi, 0x10000, buf_pa, 100);
+                printf("dgpma size = %d, size_va = %d\n", size, size_va);
+                if (0 == memcmp(dgpma, buf_pa, 100))
+                    printf("paddr consistent\n");
+                else
+                    printf("paddrinconsistent\n");
+                scanf("%d", &size);
+*/
+
     /* demonstrate name and id accessors */
 	list_processes(vmi, current_process, list_head, tasks_offset,
         current_list_entry, status, next_list_entry, pid_offset, pid,

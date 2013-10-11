@@ -56,10 +56,10 @@ extern "C" {
 //#define VMI_DEBUG
 
 /* enable or disable the address cache (v2p, pid, etc) */
-#define ENABLE_ADDRESS_CACHE 0
+#define ENABLE_ADDRESS_CACHE 1
 
 /* enable or disable the page cache */
-#define ENABLE_PAGE_CACHE 0
+#define ENABLE_PAGE_CACHE 1
 
 /* max number of pages held in page cache */
 #define MAX_PAGE_CACHE_SIZE 512
