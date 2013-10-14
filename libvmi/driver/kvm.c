@@ -458,7 +458,7 @@ status_t map_tevat_chunks(
 
     // map addresses
     while (NULL != vaddr_chunk_list) {
-        dbprint("map va: %llx - %llx, size: %dKB\n",
+        dbprint("map va: %016llx - %016llx, size: %dKB\n",
             vaddr_chunk_list->vaddr_begin, vaddr_chunk_list->vaddr_end,
             (vaddr_chunk_list->vaddr_end - vaddr_chunk_list->vaddr_begin+1)>>10);
 
@@ -1985,6 +1985,14 @@ kvm_get_dgvma(
     void** guest_mapping_vaddr,
     size_t count)
 {
+    // check if entry exists in the cache
+    addr_t maddr;
+    uint64_t length;
+    if (VMI_SUCCESS == v2m_cache_get(vmi, vaddr, pid, &maddr, &length)) {
+        *guest_mapping_vaddr = maddr;
+        return length>count?count:length;
+    }
+
     tevat_table_t tevat_pt_entry = get_tevat_table(vmi, pid);
 
     // TEVAT table is not existed
@@ -2001,6 +2009,12 @@ kvm_get_dgvma(
     // get mapping vaddr
     size_t map_size = get_tevat_mapping_vaddr(vmi,tevat_pt_entry->vaddr_chunks, vaddr,
         guest_mapping_vaddr);
+
+    // add this to the cache
+    if (*guest_mapping_vaddr) {
+        v2m_cache_set(vmi, vaddr, pid, *guest_mapping_vaddr, map_size);
+    }
+
     return map_size>count?count:map_size;
 }
 
