@@ -381,54 +381,6 @@ munmap_unlink_shm_snapshot_dev(
     }
     return VMI_SUCCESS;
 }
-
-status_t map_tevat_paddr_chunks(
-    vmi_instance_t vmi,
-    tevat_paddr_chunk_t paddr_chunk_list,
-    void* base_mapping_ptr)
-{
-    size_t map_offset = 0;
-     while (NULL != paddr_chunk_list) {
-         dbprint("map va: %016llx - %016llx, pa: %016llx - %016llx, size: %dKB\n",
-             paddr_chunk_list->vaddr_begin, paddr_chunk_list->vaddr_end,
-             paddr_chunk_list->paddr_begin, paddr_chunk_list->paddr_end,
-             (paddr_chunk_list->vaddr_end - paddr_chunk_list->vaddr_begin+1)>>10);
-         size_t size = paddr_chunk_list->vaddr_end - paddr_chunk_list->vaddr_begin + 1;
-
-         void *map = mmap(base_mapping_ptr + map_offset,  // addr
-             (long long unsigned int)size,   // len
-             PROT_READ,   // prot
-             MAP_PRIVATE | MAP_NORESERVE | MAP_POPULATE | MAP_FIXED,  // flags
-             kvm_get_instance(vmi)->shm_snapshot_fd,    // file descriptor
-             paddr_chunk_list->paddr_begin);  // offset
-
-         if (MAP_FAILED == map) {
-             perror("Failed to mmap page");
-             return VMI_FAILURE;
-         }
-
-         /*void* buf= malloc(100);
-         //vmi_translate_kv2p(vmi, 0, )
-         int read_size = vmi_read_va(vmi, paddr_chunk_list->vaddr_begin, 0, buf, 100);
-         if (read_size == 100 && 0!= memcmp(buf, map, 100)) {
-             printf("map paddr inconsistent mem at %016llx\n", paddr_chunk_list->vaddr_begin);
-             return VMI_FAILURE;
-         } else {
-             printf("map paddr consistent mem at %016llx size = %d\n", paddr_chunk_list->vaddr_begin, read_size);
-         }
-         free(buf);*/
-
-         map_offset += size;
-         paddr_chunk_list->mapping = map;
-         paddr_chunk_list = paddr_chunk_list->next;
-     }
-     return VMI_SUCCESS;
-}
-
-status_t map_tevat_chunks(
-    vmi_instance_t vmi,
-    tevat_vaddr_chunk_t vaddr_chunk_list)
-{
     // list
     /*while (NULL != vaddr_chunk_list) {
         printf("map va: %016llx - %016llx, size: %dKB\n",
@@ -456,87 +408,7 @@ status_t map_tevat_chunks(
     };
     return VMI_FAILURE;*/
 
-    // map addresses
-    while (NULL != vaddr_chunk_list) {
-        dbprint("map va: %016llx - %016llx, size: %dKB\n",
-            vaddr_chunk_list->vaddr_begin, vaddr_chunk_list->vaddr_end,
-            (vaddr_chunk_list->vaddr_end - vaddr_chunk_list->vaddr_begin+1)>>10);
 
-        // find a large enough vaddr base
-        void* base_ptr;
-        size_t size = vaddr_chunk_list->vaddr_end - vaddr_chunk_list->vaddr_begin;
-        void *map = mmap(NULL,  // addr
-            (long long unsigned int)size,   // vaddr space
-            PROT_READ,   // prot
-            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,  // flags
-            0,    // file descriptor
-            0);  // offset
-        if (MAP_FAILED != map) {
-            base_ptr = map;
-            (void) munmap(map, size);
-        } else {
-            errprint("Failed to find large enough vaddr space, size: %d MB\n", size>>20);
-            perror("");
-            return VMI_FAILURE;
-        }
-
-        // Map each physical memory chunk
-        if (VMI_SUCCESS !=
-               map_tevat_paddr_chunks(vmi, vaddr_chunk_list->paddr_chunks, base_ptr)) {
-            return VMI_FAILURE;
-        }
-        vaddr_chunk_list->mapping = base_ptr;
-
-/*        void* buf= malloc(size);
-         int read_size = vmi_read_va(vmi, vaddr_chunk_list->vaddr_begin, 0, buf, size);
-         if (read_size == size && 0 == memcmp(buf, map, 100)) {
-             printf("map vaddr consistent mem at %016llx size = %d\n", vaddr_chunk_list->vaddr_begin, read_size);
-         } else {
-             printf("map vaddr inconsistent mem at %016llx size = %d\n", vaddr_chunk_list->vaddr_begin, read_size);
-             return VMI_FAILURE;
-         }
-        free(buf);*/
-
-        vaddr_chunk_list = vaddr_chunk_list->next;
-    }
-    return VMI_SUCCESS;
-}
-
-void append_tevat_paddr_chunk(
-    tevat_paddr_chunk_t *chunk_list_ptr,
-    tevat_paddr_chunk_t *head_ptr,
-    addr_t start_vaddr,
-    addr_t end_vaddr,
-    addr_t start_paddr,
-    addr_t end_paddr)
-{
-    // the first chunk
-    if (NULL == *chunk_list_ptr) {
-        *chunk_list_ptr = malloc(sizeof(tevat_paddr_chunk));
-        memset(*chunk_list_ptr, 0, sizeof(tevat_paddr_chunk));
-        (*chunk_list_ptr)->vaddr_begin = start_vaddr;
-        (*chunk_list_ptr)->vaddr_end = end_vaddr;
-        (*chunk_list_ptr)->paddr_begin = start_paddr;
-        (*chunk_list_ptr)->paddr_end = end_paddr;
-        (*head_ptr) = *chunk_list_ptr;
-    } else {
-        if (start_paddr == (*head_ptr)->paddr_end + 1) {
-            // merge continuous chunk
-            (*head_ptr)->vaddr_end = end_vaddr;
-            (*head_ptr)->paddr_end = end_paddr;
-        } else {
-            // new entry
-            tevat_paddr_chunk_t new_page = malloc(sizeof(tevat_paddr_chunk));
-            memset(new_page, 0, sizeof(tevat_paddr_chunk));
-            new_page->vaddr_begin = start_vaddr;
-            new_page->vaddr_end = end_vaddr;
-            new_page->paddr_begin = start_paddr;
-            new_page->paddr_end = end_paddr;
-            (*head_ptr)->next = new_page;
-            (*head_ptr) = new_page;
-        }
-    }
-}
 
 int test_vaddr_paddr(
     vmi_instance_t vmi,addr_t vaddr, addr_t paddr) {
@@ -544,64 +416,98 @@ int test_vaddr_paddr(
     return vmi_paddr == paddr;
 }
 
-
-void append_tevat_chunk(
-    vmi_instance_t vmi,
-    tevat_vaddr_chunk_t *vaddr_chunk_list_ptr,
-    tevat_vaddr_chunk_t *vaddr_chunk_head_ptr,
-    tevat_paddr_chunk_t *paddr_chunk_list_ptr,
-    tevat_paddr_chunk_t *paddr_chunk_head_ptr,
+void insert_v2p_page_pair_to_m2p_chunk_list(
+    m2p_mapping_clue_chunk_t *m2p_chunk_list_ptr,
+    m2p_mapping_clue_chunk_t *m2p_chunk_head_ptr,
     addr_t start_vaddr,
     addr_t end_vaddr,
     addr_t start_paddr,
     addr_t end_paddr)
 {
-    /**
+    // the first chunk
+    if (NULL == *m2p_chunk_list_ptr) {
+        *m2p_chunk_list_ptr = malloc(sizeof(m2p_mapping_clue_chunk));
+        memset(*m2p_chunk_list_ptr, 0, sizeof(m2p_mapping_clue_chunk));
+        (*m2p_chunk_list_ptr)->vaddr_begin = start_vaddr;
+        (*m2p_chunk_list_ptr)->vaddr_end = end_vaddr;
+        (*m2p_chunk_list_ptr)->paddr_begin = start_paddr;
+        (*m2p_chunk_list_ptr)->paddr_end = end_paddr;
+        (*m2p_chunk_head_ptr) = *m2p_chunk_list_ptr;
+    } else {
+        if (start_paddr == (*m2p_chunk_head_ptr)->paddr_end + 1) {
+            // merge continuous mapping
+            (*m2p_chunk_head_ptr)->vaddr_end = end_vaddr;
+            (*m2p_chunk_head_ptr)->paddr_end = end_paddr;
+        } else {
+            // new entry
+            m2p_mapping_clue_chunk_t new_page = malloc(sizeof(m2p_mapping_clue_chunk));
+            memset(new_page, 0, sizeof(m2p_mapping_clue_chunk));
+            new_page->vaddr_begin = start_vaddr;
+            new_page->vaddr_end = end_vaddr;
+            new_page->paddr_begin = start_paddr;
+            new_page->paddr_end = end_paddr;
+            (*m2p_chunk_head_ptr)->next = new_page;
+            (*m2p_chunk_head_ptr) = new_page;
+        }
+    }
+}
+
+void insert_v2p_page_pair_to_v2m_chunk_list(
+    vmi_instance_t vmi,
+    v2m_chunk_t *v2m_chunk_list_ptr,
+    v2m_chunk_t *v2m_chunk_head_ptr,
+    m2p_mapping_clue_chunk_t *m2p_chunk_list_ptr,
+    m2p_mapping_clue_chunk_t *m2p_chunk_head_ptr,
+    addr_t start_vaddr,
+    addr_t end_vaddr,
+    addr_t start_paddr,
+    addr_t end_paddr)
+{
+
     if (!test_vaddr_paddr(vmi, start_vaddr, start_paddr)) {
         printf("error translate v: %016llx - p: %016llx - vmi_p: %016llx\n", start_vaddr, start_paddr,vmi_translate_kv2p(vmi, start_vaddr));
     } else {
-        printf("correct translate v: %016llx - p: %016llx\n", start_vaddr, start_paddr);
-    }**/
-    // the first vaddr chunk
-    if (NULL == *vaddr_chunk_list_ptr) {
-        *vaddr_chunk_list_ptr = malloc(sizeof(tevat_paddr_chunk));
-        memset(*vaddr_chunk_list_ptr, 0, sizeof(tevat_paddr_chunk));
-        (*vaddr_chunk_list_ptr)->vaddr_begin = start_vaddr;
-        (*vaddr_chunk_list_ptr)->vaddr_end = end_vaddr;
-        (*vaddr_chunk_head_ptr) = *vaddr_chunk_list_ptr;
+        //printf("correct translate v: %016llx - p: %016llx\n", start_vaddr, start_paddr);
+    }
+    // the first v2m chunk
+    if (NULL == *v2m_chunk_list_ptr) {
+        *v2m_chunk_list_ptr = malloc(sizeof(v2m_chunk));
+        memset(*v2m_chunk_list_ptr, 0, sizeof(v2m_chunk));
+        (*v2m_chunk_list_ptr)->vaddr_begin = start_vaddr;
+        (*v2m_chunk_list_ptr)->vaddr_end = end_vaddr;
+        (*v2m_chunk_head_ptr) = *v2m_chunk_list_ptr;
 
+        *m2p_chunk_list_ptr = (*v2m_chunk_head_ptr)->m2p_chunks;
+        *m2p_chunk_head_ptr = (*v2m_chunk_head_ptr)->m2p_chunks;
 
-        *paddr_chunk_list_ptr = (*vaddr_chunk_head_ptr)->paddr_chunks;
-        *paddr_chunk_head_ptr = (*vaddr_chunk_head_ptr)->paddr_chunks;
-
-        // the first paddr chunk
-        append_tevat_paddr_chunk(paddr_chunk_list_ptr, paddr_chunk_head_ptr, start_vaddr,
+        // the first m2p chunk
+        insert_v2p_page_pair_to_m2p_chunk_list(m2p_chunk_list_ptr, m2p_chunk_head_ptr, start_vaddr,
             end_vaddr, start_paddr, end_paddr);
-        (*vaddr_chunk_head_ptr)->paddr_chunks = *paddr_chunk_list_ptr;
+        (*v2m_chunk_head_ptr)->m2p_chunks = *m2p_chunk_list_ptr;
     } else {
-        if (start_vaddr == (*vaddr_chunk_head_ptr)->vaddr_end + 1) {
-            // continuous vaddr, so append paddr chunk.
-            append_tevat_paddr_chunk(paddr_chunk_list_ptr, paddr_chunk_head_ptr, start_vaddr,
+        if (start_vaddr == (*v2m_chunk_head_ptr)->vaddr_end + 1) {
+            // continuous vaddr
+            //  1. insert p2m chunk.
+            insert_v2p_page_pair_to_m2p_chunk_list(m2p_chunk_list_ptr, m2p_chunk_head_ptr, start_vaddr,
                 end_vaddr, start_paddr, end_paddr);
-            (*vaddr_chunk_head_ptr)->vaddr_end = end_vaddr;
+            //  2. expand v2m chunk
+            (*v2m_chunk_head_ptr)->vaddr_end = end_vaddr;
         } else {
-            // new vaddr chunk
-            tevat_vaddr_chunk_t new_page = malloc(sizeof(tevat_vaddr_chunk));
-            memset(new_page, 0, sizeof(tevat_vaddr_chunk));
+            // incontinuous vaddr, so new v2m chunk
+            v2m_chunk_t new_page = malloc(sizeof(v2m_chunk));
+            memset(new_page, 0, sizeof(v2m_chunk));
             new_page->vaddr_begin = start_vaddr;
             new_page->vaddr_end = end_vaddr;
-            (*vaddr_chunk_head_ptr)->next = new_page;
-            (*vaddr_chunk_head_ptr) = new_page;
+            (*v2m_chunk_head_ptr)->next = new_page;
+            (*v2m_chunk_head_ptr) = new_page;
 
+            *m2p_chunk_list_ptr = (*v2m_chunk_head_ptr)->m2p_chunks;
+            *m2p_chunk_head_ptr = (*v2m_chunk_head_ptr)->m2p_chunks;
 
-            *paddr_chunk_list_ptr = (*vaddr_chunk_head_ptr)->paddr_chunks;
-            *paddr_chunk_head_ptr = (*vaddr_chunk_head_ptr)->paddr_chunks;
-
-
-            // the first paddr chunk
-            append_tevat_paddr_chunk(paddr_chunk_list_ptr, paddr_chunk_head_ptr, start_vaddr,
+            // the first p2m chunk
+            insert_v2p_page_pair_to_m2p_chunk_list(m2p_chunk_list_ptr, m2p_chunk_head_ptr, start_vaddr,
                 end_vaddr, start_paddr, end_paddr);
-            (*vaddr_chunk_head_ptr)->paddr_chunks = *paddr_chunk_list_ptr;
+            (*v2m_chunk_head_ptr)->m2p_chunks = *m2p_chunk_list_ptr;
         }
     }
 }
@@ -610,13 +516,13 @@ status_t
 walkthrough_shm_snapshot_pagetable_nopae(
     vmi_instance_t vmi,
     addr_t dtb,
-    tevat_paddr_chunk_t* vaddr_chunk_list_ptr,
-    tevat_paddr_chunk_t* vaddr_chunk_head_ptr)
+    v2m_chunk_t* v2m_chunk_list_ptr,
+    v2m_chunk_t* v2m_chunk_head_ptr)
 {
-    tevat_vaddr_chunk_t vaddr_chunk_list = *vaddr_chunk_list_ptr;
-    tevat_vaddr_chunk_t vaddr_chunk_head = *vaddr_chunk_head_ptr;
-    tevat_paddr_chunk_t paddr_chunk_list = NULL;
-    tevat_paddr_chunk_t paddr_chunk_head = NULL;
+    v2m_chunk_t v2m_chunk_list = *v2m_chunk_list_ptr;
+    v2m_chunk_t v2m_chunk_head = *v2m_chunk_head_ptr;
+    m2p_mapping_clue_chunk_t m2p_chunk_list = NULL;
+    m2p_mapping_clue_chunk_t m2p_chunk_head = NULL;
 
     //read page directory (1 page size)
     addr_t pd_pfn = dtb >> vmi->page_shift;
@@ -637,8 +543,8 @@ walkthrough_shm_snapshot_pagetable_nopae(
                 addr_t start_paddr = pde & 0xFFC00000; // left 10 bits
                 addr_t end_paddr = start_paddr | 0x3FFFFF; // begin + 4mb
                 if (start_paddr < vmi->size) {
-                    append_tevat_chunk(vmi, &vaddr_chunk_list, &vaddr_chunk_head,
-                        &paddr_chunk_list, &paddr_chunk_head,
+                    insert_v2p_page_pair_to_v2m_chunk_list(vmi, &v2m_chunk_list, &v2m_chunk_head,
+                        &m2p_chunk_list, &m2p_chunk_head,
                         start_vaddr, end_vaddr, start_paddr, end_paddr);
                 }
             }
@@ -661,8 +567,8 @@ walkthrough_shm_snapshot_pagetable_nopae(
                         addr_t start_paddr = pte_pfn_nopae(pte); // left 20 bits
                         addr_t end_paddr = start_paddr | 0xFFF; // begin + 4kb
                         if (start_paddr < vmi->size) {
-                            append_tevat_chunk(vmi, &vaddr_chunk_list, &vaddr_chunk_head,
-                                &paddr_chunk_list, &paddr_chunk_head,
+                            insert_v2p_page_pair_to_v2m_chunk_list(vmi, &v2m_chunk_list, &v2m_chunk_head,
+                                &m2p_chunk_list, &m2p_chunk_head,
                                 start_vaddr, end_vaddr, start_paddr, end_paddr);
                         }
                     }
@@ -670,8 +576,8 @@ walkthrough_shm_snapshot_pagetable_nopae(
             }
         }
     }
-    *vaddr_chunk_list_ptr = vaddr_chunk_list;
-    *vaddr_chunk_head_ptr = vaddr_chunk_head;
+    *v2m_chunk_list_ptr = v2m_chunk_list;
+    *v2m_chunk_head_ptr = v2m_chunk_head;
     return VMI_SUCCESS;
 }
 
@@ -679,13 +585,13 @@ status_t
 walkthrough_shm_snapshot_pagetable_pae(
     vmi_instance_t vmi,
     addr_t dtb,
-    tevat_paddr_chunk_t* vaddr_chunk_list_ptr,
-    tevat_paddr_chunk_t* vaddr_chunk_head_ptr)
+    v2m_chunk_t* v2m_chunk_list_ptr,
+    v2m_chunk_t* v2m_chunk_head_ptr)
 {
-    tevat_vaddr_chunk_t vaddr_chunk_list = *vaddr_chunk_list_ptr;
-    tevat_vaddr_chunk_t vaddr_chunk_head = *vaddr_chunk_head_ptr;
-    tevat_paddr_chunk_t paddr_chunk_list = NULL;
-    tevat_paddr_chunk_t paddr_chunk_head = NULL;
+    v2m_chunk_t v2m_chunk_list = *v2m_chunk_list_ptr;
+    v2m_chunk_t v2m_chunk_head = *v2m_chunk_head_ptr;
+    m2p_mapping_clue_chunk_t m2p_chunk_list = NULL;
+    m2p_mapping_clue_chunk_t m2p_chunk_head = NULL;
 
     // read page directory pointer page (4 entries, 64bit per entry)
     addr_t pdpt_pfn = dtb >> vmi->page_shift;
@@ -719,8 +625,8 @@ walkthrough_shm_snapshot_pagetable_pae(
                         addr_t end_paddr = start_paddr | 0x1FFFFF; // begin + 2mb
 
                         if (start_paddr < vmi->size) {
-                            append_tevat_chunk(vmi, &vaddr_chunk_list, &vaddr_chunk_head,
-                                &paddr_chunk_list, &paddr_chunk_head,
+                            insert_v2p_page_pair_to_v2m_chunk_list(vmi, &v2m_chunk_list, &v2m_chunk_head,
+                                &m2p_chunk_list, &m2p_chunk_head,
                                 start_vaddr, end_vaddr, start_paddr, end_paddr);
                         }
                     }
@@ -745,9 +651,9 @@ walkthrough_shm_snapshot_pagetable_pae(
                                 addr_t end_paddr = start_paddr | 0xFFF; // begin + 4kb
 
                                 if (start_paddr < vmi->size) {
-                                    append_tevat_chunk(vmi, &vaddr_chunk_list,
-                                        &vaddr_chunk_head,
-                                        &paddr_chunk_list, &paddr_chunk_head,
+                                    insert_v2p_page_pair_to_v2m_chunk_list(vmi, &v2m_chunk_list,
+                                        &v2m_chunk_head,
+                                        &m2p_chunk_list, &m2p_chunk_head,
                                         start_vaddr, end_vaddr,
                                         start_paddr, end_paddr);
                                 }
@@ -758,8 +664,8 @@ walkthrough_shm_snapshot_pagetable_pae(
             }
         }
     }
-    *vaddr_chunk_list_ptr = vaddr_chunk_list;
-    *vaddr_chunk_head_ptr = vaddr_chunk_head;
+    *v2m_chunk_list_ptr = v2m_chunk_list;
+    *v2m_chunk_head_ptr = v2m_chunk_head;
     return VMI_SUCCESS;
 }
 
@@ -767,13 +673,13 @@ status_t
 walkthrough_shm_snapshot_pagetable_ia32e(
     vmi_instance_t vmi,
     addr_t dtb,
-    tevat_paddr_chunk_t* vaddr_chunk_list_ptr,
-    tevat_paddr_chunk_t* vaddr_chunk_head_ptr)
+    v2m_chunk_t* v2m_chunk_list_ptr,
+    v2m_chunk_t* v2m_chunk_head_ptr)
 {
-    tevat_vaddr_chunk_t vaddr_chunk_list = *vaddr_chunk_list_ptr;
-    tevat_vaddr_chunk_t vaddr_chunk_head = *vaddr_chunk_head_ptr;
-    tevat_paddr_chunk_t paddr_chunk_list = NULL;
-    tevat_paddr_chunk_t paddr_chunk_head = NULL;
+    v2m_chunk_t v2m_chunk_list = *v2m_chunk_list_ptr;
+    v2m_chunk_t v2m_chunk_head = *v2m_chunk_head_ptr;
+    m2p_mapping_clue_chunk_t m2p_chunk_list = NULL;
+    m2p_mapping_clue_chunk_t m2p_chunk_head = NULL;
 
     // read PML4 table (512 * 64-bit entries)
     addr_t pml4t_pfn = get_bits_51to12(dtb) >> vmi->page_shift;
@@ -807,8 +713,8 @@ walkthrough_shm_snapshot_pagetable_ia32e(
                         addr_t end_paddr = start_paddr | 0xFFFFFFFF; // begin + 1GB
 
                         if (start_paddr < vmi->size) {
-                            append_tevat_chunk(vmi, &vaddr_chunk_list, &vaddr_chunk_head,
-                                &paddr_chunk_list, &paddr_chunk_head,
+                            insert_v2p_page_pair_to_v2m_chunk_list(vmi, &v2m_chunk_list, &v2m_chunk_head,
+                                &m2p_chunk_list, &m2p_chunk_head,
                                 start_vaddr, end_vaddr, start_paddr, end_paddr);
                         }
 
@@ -839,9 +745,9 @@ walkthrough_shm_snapshot_pagetable_ia32e(
                                     addr_t end_paddr = start_paddr | 0x1FFFFF; // begin + 2mb
 
                                     if (start_paddr < vmi->size) {
-                                        append_tevat_chunk(vmi, &vaddr_chunk_list,
-                                            &vaddr_chunk_head,
-                                            &paddr_chunk_list, &paddr_chunk_head,
+                                        insert_v2p_page_pair_to_v2m_chunk_list(vmi, &v2m_chunk_list,
+                                            &v2m_chunk_head,
+                                            &m2p_chunk_list, &m2p_chunk_head,
                                             start_vaddr, end_vaddr,
                                             start_paddr, end_paddr);
                                     }
@@ -872,9 +778,9 @@ walkthrough_shm_snapshot_pagetable_ia32e(
                                                 | 0xFFF; // begin + 4kb
 
                                             if (start_paddr < vmi->size) {
-                                                append_tevat_chunk(vmi,
-                                                    &vaddr_chunk_list, &vaddr_chunk_head,
-                                                    &paddr_chunk_list, &paddr_chunk_head,
+                                                insert_v2p_page_pair_to_v2m_chunk_list(vmi,
+                                                    &v2m_chunk_list, &v2m_chunk_head,
+                                                    &m2p_chunk_list, &m2p_chunk_head,
                                                     start_vaddr, end_vaddr,
                                                     start_paddr, end_paddr);
                                             }
@@ -888,8 +794,8 @@ walkthrough_shm_snapshot_pagetable_ia32e(
             }
         }
     }
-    *vaddr_chunk_list_ptr = vaddr_chunk_list;
-    *vaddr_chunk_head_ptr = vaddr_chunk_head;
+    *v2m_chunk_list_ptr = v2m_chunk_list;
+    *v2m_chunk_head_ptr = v2m_chunk_head;
     return VMI_SUCCESS;
 }
 
@@ -897,20 +803,20 @@ status_t
 walkthrough_shm_snapshot_pagetable(
     vmi_instance_t vmi,
     addr_t dtb,
-    tevat_vaddr_chunk_t* vaddr_chunk_list_ptr,
-    tevat_vaddr_chunk_t* vaddr_chunk_head_ptr)
+    v2m_chunk_t* v2m_chunk_list_ptr,
+    v2m_chunk_t* v2m_chunk_head_ptr)
 {
     if (vmi->page_mode == VMI_PM_LEGACY) {
         return walkthrough_shm_snapshot_pagetable_nopae(vmi, dtb,
-            vaddr_chunk_list_ptr, vaddr_chunk_head_ptr);
+            v2m_chunk_list_ptr, v2m_chunk_head_ptr);
     }
     else if (vmi->page_mode == VMI_PM_PAE) {
         return  walkthrough_shm_snapshot_pagetable_pae(vmi, dtb,
-            vaddr_chunk_list_ptr, vaddr_chunk_head_ptr);
+            v2m_chunk_list_ptr, v2m_chunk_head_ptr);
     }
     else if (vmi->page_mode == VMI_PM_IA32E) {
         return  walkthrough_shm_snapshot_pagetable_ia32e(vmi, dtb,
-            vaddr_chunk_list_ptr, vaddr_chunk_head_ptr);
+            v2m_chunk_list_ptr, v2m_chunk_head_ptr);
     }
     else {
         errprint(
@@ -919,10 +825,95 @@ walkthrough_shm_snapshot_pagetable(
     }
 }
 
-status_t
-append_tevat_table(
+
+void list_m2p_list(m2p_mapping_clue_chunk_t m2p_chunk_list) {
+    while (NULL != m2p_chunk_list) {
+        printf("list m2p va: %016llx - %016llx, size: %dKB\n",
+            m2p_chunk_list->vaddr_begin, m2p_chunk_list->vaddr_end,
+            (m2p_chunk_list->vaddr_end - m2p_chunk_list->vaddr_begin+1)>>10);
+
+        m2p_chunk_list = m2p_chunk_list->next;
+    }
+}
+
+void list_v2m_list(v2m_chunk_t v2m_chunk_list) {
+    while (NULL != v2m_chunk_list) {
+        printf("list v2p va: %016llx - %016llx, size: %dKB\n",
+            v2m_chunk_list->vaddr_begin, v2m_chunk_list->vaddr_end,
+            (v2m_chunk_list->vaddr_end - v2m_chunk_list->vaddr_begin+1)>>10);
+
+        list_m2p_list(v2m_chunk_list->m2p_chunks);
+
+        v2m_chunk_list = v2m_chunk_list->next;
+    }
+}
+
+status_t probe_v2m_medial_addr(
     vmi_instance_t vmi,
-    tevat_table_t entry)
+    v2m_chunk_t v2m_chunk,
+    void** maddr_indicator_export)
+{
+    if (NULL != v2m_chunk) {
+        dbprint("map va: %016llx - %016llx, size: %dKB\n",
+            v2m_chunk->vaddr_begin, v2m_chunk->vaddr_end,
+            (v2m_chunk->vaddr_end - v2m_chunk->vaddr_begin+1)>>10);
+
+        // find a large enough vaddr base
+        size_t size = v2m_chunk->vaddr_end - v2m_chunk->vaddr_begin;
+        void *map = mmap(NULL,  // addr
+            (long long unsigned int)size,   // vaddr space
+            PROT_READ,   // prot
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,  // flags
+            0,    // file descriptor
+            0);  // offset
+        if (MAP_FAILED != map) {
+            *maddr_indicator_export = map;
+            (void) munmap(map, size);
+        } else {
+            errprint("Failed to find large enough vaddr space, size: %d MB\n", size>>20);
+            perror("");
+            return VMI_FAILURE;
+        }
+    }
+    return VMI_SUCCESS;
+}
+
+status_t mmap_m2p_chunks(
+    vmi_instance_t vmi,
+    void* medial_addr_indicator,
+    m2p_mapping_clue_chunk_t m2p_chunk_list)
+{
+    size_t map_offset = 0;
+     while (NULL != m2p_chunk_list) {
+         dbprint("map va: %016llx - %016llx, pa: %016llx - %016llx, size: %dKB\n",
+             m2p_chunk_list->vaddr_begin, m2p_chunk_list->vaddr_end,
+             m2p_chunk_list->paddr_begin, m2p_chunk_list->paddr_end,
+             (m2p_chunk_list->vaddr_end - m2p_chunk_list->vaddr_begin+1)>>10);
+         size_t size = m2p_chunk_list->vaddr_end - m2p_chunk_list->vaddr_begin + 1;
+
+         void *map = mmap(medial_addr_indicator + map_offset,  // addr
+             (long long unsigned int)size,   // len
+             PROT_READ,   // prot
+             MAP_PRIVATE | MAP_NORESERVE | MAP_POPULATE | MAP_FIXED,  // flags
+             kvm_get_instance(vmi)->shm_snapshot_fd,    // file descriptor
+             m2p_chunk_list->paddr_begin);  // offset
+
+         if (MAP_FAILED == map) {
+             perror("Failed to mmap page");
+             return VMI_FAILURE;
+         }
+
+         map_offset += size;
+         m2p_chunk_list->medial_mapping_addr = map;
+         m2p_chunk_list = m2p_chunk_list->next;
+     }
+     return VMI_SUCCESS;
+}
+
+status_t
+insert_v2m_table(
+    vmi_instance_t vmi,
+    v2m_table_t entry)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
@@ -933,7 +924,7 @@ append_tevat_table(
     }
     else {
         // append to the existed page table link list
-        tevat_table_t head = kvm->shm_snapshot_tevat_tables;
+        v2m_table_t head = kvm->shm_snapshot_tevat_tables;
         while (NULL != head->next) {
             head = head->next;
         }
@@ -943,28 +934,45 @@ append_tevat_table(
 }
 
 status_t
-setup_tevat_table(
+setup_v2m_table(
     vmi_instance_t vmi,
     pid_t pid,
-    addr_t dtb)
+    addr_t dtb,
+    v2m_table_t* v2m_table_pt)
 {
-    tevat_vaddr_chunk_t vaddr_chunk_list = NULL;
-    tevat_vaddr_chunk_t vaddr_chunk_head = NULL;
+    v2m_chunk_t v2m_chunk_list = NULL;
+    v2m_chunk_t v2m_chunk_head = NULL;
 
     if (VMI_SUCCESS ==
-        walkthrough_shm_snapshot_pagetable(vmi, dtb, &vaddr_chunk_list, &vaddr_chunk_head))
+        walkthrough_shm_snapshot_pagetable(vmi, dtb, &v2m_chunk_list, &v2m_chunk_head))
     {
-        if (VMI_SUCCESS ==
-            map_tevat_chunks(vmi, vaddr_chunk_list))
-        {
-            tevat_table_t guest_vaddr_entry = malloc(sizeof(tevat_table));
-            guest_vaddr_entry->pid = pid;
-            guest_vaddr_entry->vaddr_chunks = vaddr_chunk_list;
-            guest_vaddr_entry->next = NULL;
-            return append_tevat_table(vmi, guest_vaddr_entry);
-        } else {
-            return VMI_FAILURE;
+        v2m_chunk_t v2m_chunk_tmp = v2m_chunk_list;
+        while (NULL != v2m_chunk_tmp) {
+            // probe v2m medial address
+            void* maddr_indicator;
+            if (VMI_SUCCESS != probe_v2m_medial_addr(vmi, v2m_chunk_tmp, &maddr_indicator)) {
+                return VMI_FAILURE;
+            }
+
+            // mmap each m2p memory chunk
+            if (VMI_SUCCESS !=
+                mmap_m2p_chunks(vmi, maddr_indicator, v2m_chunk_tmp->m2p_chunks)) {
+                return VMI_FAILURE;
+            }
+
+            // assign valid maddr
+            v2m_chunk_tmp->medial_mapping_addr = maddr_indicator;
+
+            v2m_chunk_tmp = v2m_chunk_tmp->next;
         }
+
+        v2m_table_t v2m_table_tmp = malloc(sizeof(v2m_table));
+        v2m_table_tmp->pid = pid;
+        v2m_table_tmp->v2m_chunks = v2m_chunk_list;
+        v2m_table_tmp->next = NULL;
+
+        *v2m_table_pt = v2m_table_tmp;
+        return insert_v2m_table(vmi, v2m_table_tmp);
     }
     return VMI_FAILURE;
 }
@@ -983,9 +991,10 @@ setup_tevat_table(
  * @param[in] pid Pid of the virtual address space (0 for kernel)
  */
 status_t
-create_tevat(
+create_v2m_table(
     vmi_instance_t vmi,
-    pid_t pid)
+    pid_t pid,
+    v2m_table_t* v2m_table_pt)
 {
     addr_t dtb = 0;
     if (VMI_SUCCESS == test_using_shm_snapshot(kvm_get_instance(vmi))) {
@@ -1015,7 +1024,7 @@ create_tevat(
                 return VMI_FAILURE;
             }
         }
-        return setup_tevat_table(vmi, pid, dtb);
+        return setup_v2m_table(vmi, pid, dtb, v2m_table_pt);
     }
     else {
         errprint("can't create TEVAT because shm-snapshot is not using.\n");
@@ -1023,15 +1032,15 @@ create_tevat(
     }
 }
 
-tevat_table_t
-get_tevat_table(
+v2m_table_t
+get_v2m_table(
     vmi_instance_t vmi,
     pid_t pid)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
     if (NULL != kvm->shm_snapshot_tevat_tables) {
-        tevat_table_t tmp = kvm->shm_snapshot_tevat_tables;
+        v2m_table_t tmp = kvm->shm_snapshot_tevat_tables;
         while (NULL != tmp) {
             if (pid == tmp->pid)
                 return tmp;
@@ -1045,30 +1054,18 @@ get_tevat_table(
  * Get the mapping address of a given virtual address.
  */
 size_t
-get_tevat_mapping_vaddr(
+lookup_v2m(
     vmi_instance_t vmi,
-    tevat_vaddr_chunk_t chunks,
+    v2m_chunk_t chunks,
     addr_t vaddr,
     const void** mapping_vaddr)
 {
     if (NULL != chunks) {
-        tevat_vaddr_chunk_t tmp = chunks;
+        v2m_chunk_t tmp = chunks;
         while (NULL != tmp) {
             if (vaddr >= tmp->vaddr_begin && vaddr <= tmp->vaddr_end) {
                 size_t size = tmp->vaddr_end - vaddr + 1;
-                *mapping_vaddr = tmp->mapping + vaddr - tmp->vaddr_begin;
-
-/*
-                void* buf= malloc(100);
-                //vmi_translate_kv2p(vmi, 0, )
-                vmi_read_va(vmi, vaddr, 0, buf, 100);
-                if (0!= memcmp(buf, *mapping_vaddr, 100)) {
-                    printf("read inconsistent mem\n");
-                } else {
-                    printf("read consistent mem\n");
-                }
-                free(buf);*/
-
+                *mapping_vaddr = tmp->medial_mapping_addr + vaddr - tmp->vaddr_begin;
                 return size;
             }
             tmp = tmp->next;
@@ -1078,14 +1075,14 @@ get_tevat_mapping_vaddr(
 }
 
 status_t
-munmap_tevat_chunks(
-    tevat_vaddr_chunk_t tevat_mt_entry)
+munmap_m2p_chunks(
+    v2m_chunk_t v2m_chunk_list)
 {
-    tevat_vaddr_chunk_t tail = tevat_mt_entry;
+    v2m_chunk_t tail = v2m_chunk_list;
     if (NULL != tail) {
         do {
-            tevat_vaddr_chunk_t tmp = tail->next;
-            munmap(tail->mapping,
+            v2m_chunk_t tmp = tail->next;
+            munmap(tail->medial_mapping_addr,
                 (tail->vaddr_end - tail->vaddr_begin + 1));
             free(tail);
             tail = tmp;
@@ -1093,22 +1090,22 @@ munmap_tevat_chunks(
         return VMI_SUCCESS;
     }
     else {
-        errprint("try to free NULL tevat_mt_entry->chunks");
+        errprint("try to free NULL v2m_entry->chunks");
         return VMI_FAILURE;
     }
 }
 
 status_t
-delete_tevat_table(
+delete_v2m_table(
     vmi_instance_t vmi,
-    tevat_table_t tevat_table)
+    v2m_table_t v2m_table)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
     // the 1st entry matches
     if (NULL != kvm->shm_snapshot_tevat_tables
-        && tevat_table == kvm->shm_snapshot_tevat_tables) {
-        tevat_table_t tmp = kvm->shm_snapshot_tevat_tables;
+        && v2m_table == kvm->shm_snapshot_tevat_tables) {
+        v2m_table_t tmp = kvm->shm_snapshot_tevat_tables;
         kvm->shm_snapshot_tevat_tables = tmp->next;
         free(tmp);
         return VMI_SUCCESS;
@@ -1116,11 +1113,11 @@ delete_tevat_table(
     // there are two or more entries
     else if (NULL != kvm->shm_snapshot_tevat_tables
         && NULL != kvm->shm_snapshot_tevat_tables->next) {
-        tevat_table_t tmp[2];
+        v2m_table_t tmp[2];
         tmp[0] = kvm->shm_snapshot_tevat_tables;
         tmp[1] = kvm->shm_snapshot_tevat_tables->next;
         while (NULL != tmp[1]) {
-            if (tevat_table == tmp[1]) {
+            if (v2m_table == tmp[1]) {
                 tmp[0]->next = tmp[1]->next;
                 free(tmp[1]);
                 return VMI_SUCCESS;
@@ -1141,25 +1138,25 @@ delete_tevat_table(
  *  2. delete TEVAT table.
  */
 status_t
-destroy_tevat(
+destroy_v2m(
     vmi_instance_t vmi)
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    tevat_table_t tail = kvm->shm_snapshot_tevat_tables;
+    v2m_table_t tail = kvm->shm_snapshot_tevat_tables;
     if (NULL != tail) {
         do {
-            tevat_table_t tmp = tail->next;
+            v2m_table_t tmp = tail->next;
 
             if (VMI_SUCCESS
-                != munmap_tevat_chunks(tail->vaddr_chunks)) {
+                != munmap_m2p_chunks(tail->v2m_chunks)) {
                 errprint("fail to free_chunks_of_tevat_mapping_table_entry\n");
                 return VMI_FAILURE;
             }
 
-            tail->vaddr_chunks = NULL;
+            tail->v2m_chunks = NULL;
 
-            if (VMI_SUCCESS != delete_tevat_table(vmi, tail)) {
+            if (VMI_SUCCESS != delete_v2m_table(vmi, tail)) {
                 errprint("fail to delete_tevat_mapping_table_entry\n");
                 return VMI_FAILURE;
             }
@@ -1959,7 +1956,7 @@ status_t
 kvm_destroy_shm_snapshot(
     vmi_instance_t vmi)
 {
-    destroy_tevat(vmi);
+    destroy_v2m(vmi);
     kvm_teardown_shm_snapshot_mode(vmi);
 
     return kvm_setup_live_mode(vmi);
@@ -1982,40 +1979,37 @@ kvm_get_dgvma(
     vmi_instance_t vmi,
     addr_t vaddr,
     pid_t pid,
-    void** guest_mapping_vaddr,
+    void** medial_addr_ptr,
     size_t count)
 {
     // check if entry exists in the cache
     addr_t maddr;
     uint64_t length;
     if (VMI_SUCCESS == v2m_cache_get(vmi, vaddr, pid, &maddr, &length)) {
-        *guest_mapping_vaddr = maddr;
+        *medial_addr_ptr = maddr;
         return length>count?count:length;
     }
 
-    tevat_table_t tevat_pt_entry = get_tevat_table(vmi, pid);
-
-    // TEVAT table is not existed
-    if (NULL == tevat_pt_entry) {
-        // create new TEVAT mapping
-        if (VMI_SUCCESS == create_tevat(vmi, pid)) {
-            tevat_pt_entry = get_tevat_table(vmi, pid);
-        }
-        else {
-            return 0; // cannot create new TEVAT mapping
+    // get v2m table of a pid
+    v2m_table_t v2m = get_v2m_table(vmi, pid);
+    // v2m table is not existed
+    if (NULL == v2m) {
+        // create v2m table
+        if (VMI_SUCCESS != create_v2m_table(vmi, pid, &v2m)) {
+            return 0; // cannot create new v2m mapping
         }
     }
 
-    // get mapping vaddr
-    size_t map_size = get_tevat_mapping_vaddr(vmi,tevat_pt_entry->vaddr_chunks, vaddr,
-        guest_mapping_vaddr);
+    // get medial addr
+    size_t v2m_size = lookup_v2m(vmi,v2m->v2m_chunks, vaddr,
+        medial_addr_ptr);
 
     // add this to the cache
-    if (*guest_mapping_vaddr) {
-        v2m_cache_set(vmi, vaddr, pid, *guest_mapping_vaddr, map_size);
+    if (*medial_addr_ptr) {
+        v2m_cache_set(vmi, vaddr, pid, *medial_addr_ptr, v2m_size);
     }
 
-    return map_size>count?count:map_size;
+    return v2m_size>count?count:v2m_size;
 }
 
 #endif

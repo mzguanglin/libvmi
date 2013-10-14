@@ -30,32 +30,34 @@
 
 #if ENABLE_SHM_SNAPSHOT == 1
 
-// TEVAT physical memory mapping chunk
-typedef struct tevat_paddr_chunk_struct {
+// medial address -> shm-snapshot (guest physical address)
+//   continuous guest virtual address and physical address in a chunk
+typedef struct m2p_mapping_clue_chunk_struct {
     addr_t vaddr_begin;
     addr_t vaddr_end;
     addr_t paddr_begin;
     addr_t paddr_end;
-    void * mapping;
-    struct tevat_paddr_chunk_struct* next;
-} tevat_paddr_chunk, *tevat_paddr_chunk_t;
+    void * medial_mapping_addr;
+    struct m2p_mapping_clue_chunk_struct* next;
+} m2p_mapping_clue_chunk, *m2p_mapping_clue_chunk_t;
 
-// TEVAT virtual memory mapping chunk
-typedef struct tevat_vaddr_chunk_struct {
+// guest virtual address -> medial address
+//   continuous guest virtual address in a chunk
+typedef struct v2m_chunk_struct {
     addr_t vaddr_begin;
     addr_t vaddr_end;
-    tevat_paddr_chunk_t paddr_chunks;
-    void * mapping;
-    struct tevat_vaddr_chunk_struct* next;
-} tevat_vaddr_chunk, *tevat_vaddr_chunk_t;
+    void * medial_mapping_addr;
+    m2p_mapping_clue_chunk_t m2p_chunks;
+    struct v2m_chunk_struct* next;
+} v2m_chunk, *v2m_chunk_t;
 
-// TEVAT virtual memory mapping table which
-// incorporates a list of mapping chunks of a pid.
-typedef struct tevat_table_struct {
+// v2m mappings which
+// incorporates a list of v2m mapping chunks of a pid.
+typedef struct v2m_table_struct {
     pid_t pid;
-    tevat_vaddr_chunk_t vaddr_chunks;
-    struct tevat_table_struct* next;
-} tevat_table, *tevat_table_t;
+    v2m_chunk_t v2m_chunks;
+    struct v2m_table_struct* next;
+} v2m_table, *v2m_table_t;
 
 #endif
 
@@ -72,7 +74,7 @@ typedef struct kvm_instance {
     int   shm_snapshot_fd;    /** file description of the shared memory snapshot device */
     void *shm_snapshot_map;   /** mapped shared memory region */
     char *shm_snapshot_cpu_regs;  /** string of dumped CPU registers */
-    tevat_table_t shm_snapshot_tevat_tables; /** TEVAT mappping table link list of all pids */
+    v2m_table_t shm_snapshot_tevat_tables; /** TEVAT mappping table link list of all pids */
 #endif
 } kvm_instance_t;
 
