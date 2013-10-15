@@ -381,41 +381,16 @@ munmap_unlink_shm_snapshot_dev(
     }
     return VMI_SUCCESS;
 }
-    // list
-    /*while (NULL != vaddr_chunk_list) {
-        printf("map va: %016llx - %016llx, size: %dKB\n",
-            vaddr_chunk_list->vaddr_begin, vaddr_chunk_list->vaddr_end,
-            (vaddr_chunk_list->vaddr_end - vaddr_chunk_list->vaddr_begin+1)>>10);*/
-        /*
-        tevat_paddr_chunk_t paddr_chunk_list = vaddr_chunk_list->paddr_chunks;
-        while  (NULL != paddr_chunk_list) {
-            void* paddr = vmi_translate_kv2p(vmi, paddr_chunk_list->vaddr_begin);
-            if (paddr == paddr_chunk_list->paddr_begin)
-                printf("map va: %llx - %llx, pa: %llx - %llx, size: %dKB\n",
-                    paddr_chunk_list->vaddr_begin, paddr_chunk_list->vaddr_end,
-                    paddr_chunk_list->paddr_begin, paddr_chunk_list->paddr_end,
-                    (paddr_chunk_list->vaddr_end - paddr_chunk_list->vaddr_begin+1)>>10);
-            else
-                printf("errormap va: %llx - %llx, pa: %llx - %llx, vmipa: %llx , size: %dKB\n",
-                    paddr_chunk_list->vaddr_begin, paddr_chunk_list->vaddr_end,
-                    paddr_chunk_list->paddr_begin, paddr_chunk_list->paddr_end,
-                    paddr,
-                    (paddr_chunk_list->vaddr_end - paddr_chunk_list->vaddr_begin+1)>>10);
 
-            paddr_chunk_list = paddr_chunk_list->next;
-        } */
-       /*vaddr_chunk_list = vaddr_chunk_list->next;
-    };
-    return VMI_FAILURE;*/
-
-
-
-int test_vaddr_paddr(
-    vmi_instance_t vmi,addr_t vaddr, addr_t paddr) {
-    addr_t vmi_paddr = vmi_translate_kv2p(vmi, vaddr);
-    return vmi_paddr == paddr;
-}
-
+/**
+ * Throw v2p consecutive mapping range to this m2p chunk creator.
+ * @param[out] m2p_chunk_list_ptr
+ * @param[out] m2p_chunk_head_ptr
+ * @param[in] start_vaddr
+ * @param[in] end_vaddr
+ * @param[in] start_paddr
+ * @param[in] end_paddr
+ */
 void insert_v2p_page_pair_to_m2p_chunk_list(
     m2p_mapping_clue_chunk_t *m2p_chunk_list_ptr,
     m2p_mapping_clue_chunk_t *m2p_chunk_head_ptr,
@@ -452,6 +427,18 @@ void insert_v2p_page_pair_to_m2p_chunk_list(
     }
 }
 
+/**
+ * Throw v2p consecutive mapping range to this v2m chunk creator.
+ * @param[in] vmi LibVMI instance
+ * @param[out] v2m_chunk_list_ptr
+ * @param[out] v2m_chunk_head_ptr
+ * @param[out] m2p_chunk_list_ptr
+ * @param[out] m2p_chunk_head_ptr
+ * @param[in] start_vaddr
+ * @param[in] end_vaddr
+ * @param[in] start_paddr
+ * @param[in] end_paddr
+ */
 void insert_v2p_page_pair_to_v2m_chunk_list(
     vmi_instance_t vmi,
     v2m_chunk_t *v2m_chunk_list_ptr,
@@ -463,12 +450,6 @@ void insert_v2p_page_pair_to_v2m_chunk_list(
     addr_t start_paddr,
     addr_t end_paddr)
 {
-
-    if (!test_vaddr_paddr(vmi, start_vaddr, start_paddr)) {
-        printf("error translate v: %016llx - p: %016llx - vmi_p: %016llx\n", start_vaddr, start_paddr,vmi_translate_kv2p(vmi, start_vaddr));
-    } else {
-        //printf("correct translate v: %016llx - p: %016llx\n", start_vaddr, start_paddr);
-    }
     // the first v2m chunk
     if (NULL == *v2m_chunk_list_ptr) {
         *v2m_chunk_list_ptr = malloc(sizeof(v2m_chunk));
@@ -692,7 +673,6 @@ walkthrough_shm_snapshot_pagetable_ia32e(
 
         // valid page directory pointer entry
         if (entry_present(vmi->os_type, pml4e)) {
-
             // read page directory pointer table (512 * 64-bit entries)
             addr_t pdpt_pfn = get_bits_51to12(pml4e) >> vmi->page_shift;
             unsigned char *pdpt = vmi_read_page(vmi, pdpt_pfn); // pdp table
@@ -704,9 +684,7 @@ walkthrough_shm_snapshot_pagetable_ia32e(
 
                 // valid page directory pointer entry
                 if (entry_present(vmi->os_type, pdpte)) {
-
                     if (page_size_flag(pdpte)) { // 1GB large page
-
                         addr_t start_vaddr = i << 39 | j << 30; // 47th ~ 30th bits
                         addr_t end_vaddr = start_vaddr | 0xFFFFFFFF; // begin + 1GB
                         addr_t start_paddr = pdpte & 0x000FFFFFC0000000ULL; //  22 (51th - 30th) bits
@@ -720,7 +698,6 @@ walkthrough_shm_snapshot_pagetable_ia32e(
 
                     }
                     else {
-
                         //read page directory  (1 page size)
                         addr_t pd_pfn = get_bits_51to12(pdpte)
                             >> vmi->page_shift; // 40 (51th ~ 12th) bits
@@ -734,7 +711,6 @@ walkthrough_shm_snapshot_pagetable_ia32e(
 
                             // valid page directory entry
                             if (entry_present(vmi->os_type, pde)) {
-
                                 if (page_size_flag(pde)) { // 2MB large page
 
                                     addr_t start_vaddr = i << 39 | j << 30
@@ -799,6 +775,13 @@ walkthrough_shm_snapshot_pagetable_ia32e(
     return VMI_SUCCESS;
 }
 
+/**
+ * Walk through the page table to gather v2m chunks.
+ * @param[in] vmi LibVMI instance
+ * @param[in] dtb
+ * @param[out] v2m_chunk_list_ptr
+ * @param[out] v2m_chunk_head_ptr
+ */
 status_t
 walkthrough_shm_snapshot_pagetable(
     vmi_instance_t vmi,
@@ -825,36 +808,21 @@ walkthrough_shm_snapshot_pagetable(
     }
 }
 
-
-void list_m2p_list(m2p_mapping_clue_chunk_t m2p_chunk_list) {
-    while (NULL != m2p_chunk_list) {
-        printf("list m2p va: %016llx - %016llx, size: %dKB\n",
-            m2p_chunk_list->vaddr_begin, m2p_chunk_list->vaddr_end,
-            (m2p_chunk_list->vaddr_end - m2p_chunk_list->vaddr_begin+1)>>10);
-
-        m2p_chunk_list = m2p_chunk_list->next;
-    }
-}
-
-void list_v2m_list(v2m_chunk_t v2m_chunk_list) {
-    while (NULL != v2m_chunk_list) {
-        printf("list v2p va: %016llx - %016llx, size: %dKB\n",
-            v2m_chunk_list->vaddr_begin, v2m_chunk_list->vaddr_end,
-            (v2m_chunk_list->vaddr_end - v2m_chunk_list->vaddr_begin+1)>>10);
-
-        list_m2p_list(v2m_chunk_list->m2p_chunks);
-
-        v2m_chunk_list = v2m_chunk_list->next;
-    }
-}
-
+/**
+ * As we must ensure consecutive v2m mappings which are usually constituted by
+ *  many m2p chunks, we should probe a large enough medial address range (i.e.
+ *  LibVMI virtual address) to place those m2p mappings together.
+ * @param[in] vmi LibVMI instance
+ * @param[in] v2m_chunk
+ * @param[out] maddr_indicator_export
+ */
 status_t probe_v2m_medial_addr(
     vmi_instance_t vmi,
     v2m_chunk_t v2m_chunk,
     void** maddr_indicator_export)
 {
     if (NULL != v2m_chunk) {
-        dbprint("map va: %016llx - %016llx, size: %dKB\n",
+        dbprint("probe medial space for va: %016llx - %016llx, size: %dKB\n",
             v2m_chunk->vaddr_begin, v2m_chunk->vaddr_end,
             (v2m_chunk->vaddr_end - v2m_chunk->vaddr_begin+1)>>10);
 
@@ -870,7 +838,8 @@ status_t probe_v2m_medial_addr(
             *maddr_indicator_export = map;
             (void) munmap(map, size);
         } else {
-            errprint("Failed to find large enough vaddr space, size: %d MB\n", size>>20);
+            errprint("Failed to find large enough medial address space,"
+                " size:"PRIu64" MB\n", size>>20);
             perror("");
             return VMI_FAILURE;
         }
@@ -878,6 +847,12 @@ status_t probe_v2m_medial_addr(
     return VMI_SUCCESS;
 }
 
+/**
+ * mmap m2p indicated by a list of m2p mappping clue chunks and a medial address.
+ * @param[in] vmi LibVMI instance
+ * @param[in] medial_addr_indicator the start address
+ * @param[in] m2p_chunk_list
+ */
 status_t mmap_m2p_chunks(
     vmi_instance_t vmi,
     void* medial_addr_indicator,
@@ -910,6 +885,31 @@ status_t mmap_m2p_chunks(
      return VMI_SUCCESS;
 }
 
+/**
+ * delete m2p chunks in a collection.
+ * @param[in] vmi LibVMI instance
+ * @param[in] medial_addr_indicator the start address
+ * @param[out] m2p_chunk_list_ptr
+ */
+status_t delete_m2p_chunks(
+    vmi_instance_t vmi,
+    m2p_mapping_clue_chunk_t* m2p_chunk_list_ptr)
+{
+    m2p_mapping_clue_chunk_t tmp = *m2p_chunk_list_ptr;
+    while (NULL != tmp) {
+        m2p_mapping_clue_chunk_t tmp2 = tmp->next;
+        free(tmp);
+        tmp = tmp2;
+    }
+    *m2p_chunk_list_ptr = NULL;
+    return VMI_SUCCESS;
+}
+
+/**
+ * Insert a v2m table to the collection
+ * @param[in] vmi LibVMI instance
+ * @param[in] entry v2m table
+ */
 status_t
 insert_v2m_table(
     vmi_instance_t vmi,
@@ -917,14 +917,14 @@ insert_v2m_table(
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    // the first tevat page table
-    if (kvm->shm_snapshot_tevat_tables == NULL) {
-        kvm->shm_snapshot_tevat_tables = entry;
+    // the first v2m table
+    if (kvm->shm_snapshot_v2m_tables == NULL) {
+        kvm->shm_snapshot_v2m_tables = entry;
         return VMI_SUCCESS;
     }
     else {
-        // append to the existed page table link list
-        v2m_table_t head = kvm->shm_snapshot_tevat_tables;
+        // append to the existed v2m table link list
+        v2m_table_t head = kvm->shm_snapshot_v2m_tables;
         while (NULL != head->next) {
             head = head->next;
         }
@@ -933,6 +933,13 @@ insert_v2m_table(
     }
 }
 
+/**
+ * Setup a v2m table of a given pid and dtb.
+ * @param[in] vmi LibVMI instance
+ * @param[in] pid
+ * @param[in] dtb correspond to the pid
+ * @param[out] v2m_table_pt the generated v2m table
+ */
 status_t
 setup_v2m_table(
     vmi_instance_t vmi,
@@ -960,6 +967,12 @@ setup_v2m_table(
                 return VMI_FAILURE;
             }
 
+            // delete m2p chunks
+            if (VMI_SUCCESS !=
+                delete_m2p_chunks(vmi, &v2m_chunk_tmp->m2p_chunks)) {
+                return VMI_FAILURE;
+            }
+
             // assign valid maddr
             v2m_chunk_tmp->medial_mapping_addr = maddr_indicator;
 
@@ -978,17 +991,13 @@ setup_v2m_table(
 }
 
 /**
- * Transparent Efficient Virtual Address Translation: mapping-based guest
- * address translation bypassing vmi_translate_v2p(). It acts as a smart
- * backend of vmi_read_va().
- * Note:
- * 1. It is dependent on shm-snapshot;
- * 2. It costs several hundred milliseconds to create a TEVAT mapping
- *    of a specific pid;
- * 3. The TEVAT mappings will stay until vmi_shm_snapshot_destroy().
- *
+ * Create a v2m table of a given pid.
+ * This function will walkthrough the page table of the given pid, establish
+ *  the mappings of v2m and m2p, and then insert the new v2m table to a
+ *  collection.
  * @param[in] vmi LibVMI instance
  * @param[in] pid Pid of the virtual address space (0 for kernel)
+ * @param[out] the generated v2m table.
  */
 status_t
 create_v2m_table(
@@ -1032,6 +1041,11 @@ create_v2m_table(
     }
 }
 
+/**
+ * Search the collection of v2m tables by a pid.
+ * @param[in] vmi LibVMI instance
+ * @param[in] pid Pid of the virtual address space (0 for kernel)
+ */
 v2m_table_t
 get_v2m_table(
     vmi_instance_t vmi,
@@ -1039,8 +1053,8 @@ get_v2m_table(
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    if (NULL != kvm->shm_snapshot_tevat_tables) {
-        v2m_table_t tmp = kvm->shm_snapshot_tevat_tables;
+    if (NULL != kvm->shm_snapshot_v2m_tables) {
+        v2m_table_t tmp = kvm->shm_snapshot_v2m_tables;
         while (NULL != tmp) {
             if (pid == tmp->pid)
                 return tmp;
@@ -1051,21 +1065,25 @@ get_v2m_table(
 }
 
 /**
- * Get the mapping address of a given virtual address.
+ * Search the medial address of a given virtual address.
+ * @param[in] vmi LibVMI instance
+ * @param[in] v2m_chunk_list
+ * @param[in] vaddr the virtual address
+ * @param[out] medial_vaddr_ptr the corresponded medial address
  */
 size_t
-lookup_v2m(
+lookup_v2m_table(
     vmi_instance_t vmi,
-    v2m_chunk_t chunks,
+    v2m_chunk_t v2m_chunk_list,
     addr_t vaddr,
-    const void** mapping_vaddr)
+    void** medial_vaddr_ptr)
 {
-    if (NULL != chunks) {
-        v2m_chunk_t tmp = chunks;
+    if (NULL != v2m_chunk_list) {
+        v2m_chunk_t tmp = v2m_chunk_list;
         while (NULL != tmp) {
             if (vaddr >= tmp->vaddr_begin && vaddr <= tmp->vaddr_end) {
                 size_t size = tmp->vaddr_end - vaddr + 1;
-                *mapping_vaddr = tmp->medial_mapping_addr + vaddr - tmp->vaddr_begin;
+                *medial_vaddr_ptr = tmp->medial_mapping_addr + vaddr - tmp->vaddr_begin;
                 return size;
             }
             tmp = tmp->next;
@@ -1074,6 +1092,10 @@ lookup_v2m(
     return 0;
 }
 
+/**
+ * munmap many m2p mappings in a same v2m chunk.
+ * @param[in] v2m_chunk_list
+ */
 status_t
 munmap_m2p_chunks(
     v2m_chunk_t v2m_chunk_list)
@@ -1095,6 +1117,11 @@ munmap_m2p_chunks(
     }
 }
 
+/**
+ * delete a given v2m table structure
+ * @param[in] vmi LibVMI instance
+ * @param[in] v2m_table the table to delete
+ */
 status_t
 delete_v2m_table(
     vmi_instance_t vmi,
@@ -1103,19 +1130,19 @@ delete_v2m_table(
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
     // the 1st entry matches
-    if (NULL != kvm->shm_snapshot_tevat_tables
-        && v2m_table == kvm->shm_snapshot_tevat_tables) {
-        v2m_table_t tmp = kvm->shm_snapshot_tevat_tables;
-        kvm->shm_snapshot_tevat_tables = tmp->next;
+    if (NULL != kvm->shm_snapshot_v2m_tables
+        && v2m_table == kvm->shm_snapshot_v2m_tables) {
+        v2m_table_t tmp = kvm->shm_snapshot_v2m_tables;
+        kvm->shm_snapshot_v2m_tables = tmp->next;
         free(tmp);
         return VMI_SUCCESS;
     }
     // there are two or more entries
-    else if (NULL != kvm->shm_snapshot_tevat_tables
-        && NULL != kvm->shm_snapshot_tevat_tables->next) {
+    else if (NULL != kvm->shm_snapshot_v2m_tables
+        && NULL != kvm->shm_snapshot_v2m_tables->next) {
         v2m_table_t tmp[2];
-        tmp[0] = kvm->shm_snapshot_tevat_tables;
-        tmp[1] = kvm->shm_snapshot_tevat_tables->next;
+        tmp[0] = kvm->shm_snapshot_v2m_tables;
+        tmp[1] = kvm->shm_snapshot_v2m_tables->next;
         while (NULL != tmp[1]) {
             if (v2m_table == tmp[1]) {
                 tmp[0]->next = tmp[1]->next;
@@ -1133,9 +1160,10 @@ delete_v2m_table(
 }
 
 /**
- * Destroy TEVAT facilities.
- *  1. munmap TEVAT trunks;
- *  2. delete TEVAT table.
+ * Destroy v2m mappings.
+ *  1. munmap many m2p mappings in a v2m;
+ *  2. delete v2m table.
+ * @param[in] vmi LibVMI instance
  */
 status_t
 destroy_v2m(
@@ -1143,7 +1171,7 @@ destroy_v2m(
 {
     kvm_instance_t *kvm = kvm_get_instance(vmi);
 
-    v2m_table_t tail = kvm->shm_snapshot_tevat_tables;
+    v2m_table_t tail = kvm->shm_snapshot_v2m_tables;
     if (NULL != tail) {
         do {
             v2m_table_t tmp = tail->next;
@@ -1162,7 +1190,7 @@ destroy_v2m(
             }
             tail = tmp;
         } while (NULL != tail);
-        kvm->shm_snapshot_tevat_tables = NULL;
+        kvm->shm_snapshot_v2m_tables = NULL;
     }
     return VMI_SUCCESS;
 }
@@ -1962,18 +1990,38 @@ kvm_destroy_shm_snapshot(
     return kvm_setup_live_mode(vmi);
 }
 
+
+/**
+ * A similar memory read semantic to vmi_read_pa() but a non-copy direct access.
+ * As there is only one mapping of both p2m and m2p, we don't search any v2m table.
+ * Note that it is only capable for shm-snapshot.
+ * @param[in] vmi LibVMI instance
+ * @param[in] paddr
+ * @param[out] medial_addr_ptr
+ * @param[in] count the expected count of bytes
+ * @return the actual count that less or equal than count[in]
+ */
 size_t kvm_get_dgpma(
     vmi_instance_t vmi,
     addr_t paddr,
-    void** guest_mapping_vaddr,
+    void** medial_addr_ptr,
     size_t count) {
 
-    *guest_mapping_vaddr = kvm_get_instance(vmi)->shm_snapshot_map + paddr;
+    *medial_addr_ptr = kvm_get_instance(vmi)->shm_snapshot_map + paddr;
     size_t max_size = vmi->size - (paddr - 0);
     return max_size>count?count:max_size;
 }
 
-
+/**
+ * A similar memory read semantic to vmi_read_va() but a non-copy direct access.
+ * Note that it is only capable for shm-snapshot.
+ * @param[in] vmi LibVMI instance
+ * @param[in] vaddr
+ * @param[in] pid
+ * @param[out] medial_addr_ptr
+ * @param[in] count the expected count of bytes
+ * @return the actual count that less or equal than count[in]
+ */
 size_t
 kvm_get_dgvma(
     vmi_instance_t vmi,
@@ -1986,7 +2034,7 @@ kvm_get_dgvma(
     addr_t maddr;
     uint64_t length;
     if (VMI_SUCCESS == v2m_cache_get(vmi, vaddr, pid, &maddr, &length)) {
-        *medial_addr_ptr = maddr;
+        *medial_addr_ptr = (void*)maddr;
         return length>count?count:length;
     }
 
@@ -2001,12 +2049,12 @@ kvm_get_dgvma(
     }
 
     // get medial addr
-    size_t v2m_size = lookup_v2m(vmi,v2m->v2m_chunks, vaddr,
+    size_t v2m_size = lookup_v2m_table(vmi,v2m->v2m_chunks, vaddr,
         medial_addr_ptr);
 
     // add this to the cache
     if (*medial_addr_ptr) {
-        v2m_cache_set(vmi, vaddr, pid, *medial_addr_ptr, v2m_size);
+        v2m_cache_set(vmi, vaddr, pid, (addr_t)*medial_addr_ptr, v2m_size);
     }
 
     return v2m_size>count?count:v2m_size;
@@ -2167,8 +2215,13 @@ kvm_destroy_shm_snapshot(
     return VMI_FAILURE;
 }
 
-const void * kvm_get_dgpma(
-    vmi_instance_t vmi) {
+size_t
+kvm_get_dgpma(
+    vmi_instance_t vmi,
+    addr_t paddr,
+    void** medial_addr_ptr,
+    size_t count)
+{
     return NULL;
 }
 

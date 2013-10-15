@@ -28,7 +28,7 @@
 //  1) PID --> DTB
 //  2) Symbol --> Virtual address
 //  3) Virtual address --> physical address
-//  4) Virtual address --> Medial address
+//  4) Virtual address --> Medial address (for shm-snapshot)
 
 #include "libvmi.h"
 #include "private.h"
