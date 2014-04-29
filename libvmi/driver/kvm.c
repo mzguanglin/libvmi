@@ -58,6 +58,26 @@ struct request {
 
 //----------------------------------------------------------------------------
 // Helper functions
+void print_measurement(
+    char *measurement_name,
+    struct timeval ktv_start,
+    struct timeval ktv_end
+    )
+{
+    long int diff =
+        (((long int) ktv_end.tv_usec - (long int) ktv_start.tv_usec) +
+          (((long int) ktv_end.tv_sec % 1000000 -
+             (long int) ktv_start.tv_sec % 1000000) * 1000000));
+
+    printf("%ld.%.6ld : %ld.%.6ld : %ld\n",
+              ((long int) ktv_start.tv_sec) % 1000000,
+              (long int) ktv_start.tv_usec,
+              ((long int) ktv_end.tv_sec) % 1000000,
+              (long int) ktv_end.tv_usec, diff);
+
+    printf("%s measurement: %ld (us), %ld (ms), %ld (s)\n", measurement_name, diff, diff /1000, diff / 1000000);
+}
+
 
 //
 // QMP Command Interactions
@@ -289,7 +309,21 @@ exec_shm_snapshot(
         sprintf(query, query_template, shm_filename);
         kvm->shm_snapshot_path = strdup(shm_filename);
         free(unique_shm_path);
+
+        kvm_pause_vm(vmi);
+#ifdef QMP_MEASUREMENT
+        struct timeval ktv_start;
+        struct timeval ktv_end;
+        gettimeofday(&ktv_start, 0);
+#endif
+
         char *output = exec_qmp_cmd(kvm, query);
+
+#ifdef QMP_MEASUREMENT
+        gettimeofday(&ktv_end, 0);
+        print_measurement("QMP snapshot", ktv_start, ktv_end);
+#endif
+        kvm_resume_vm(vmi);
         free(query);
         return output;
     }
@@ -450,6 +484,10 @@ void insert_v2p_page_pair_to_v2m_chunk_list(
     addr_t start_paddr,
     addr_t end_paddr)
 {
+#ifdef PRINT_BLOCK
+    // v2p block
+    printf("v2pva: 0x%lx ~ 0x%lx, pa: 0x%lx ~ 0x%lx, size: %ld KB\n", start_vaddr, end_vaddr,start_paddr,  end_paddr, (end_paddr+1 - start_paddr)>>10);
+#endif
     // the first v2m chunk
     if (NULL == *v2m_chunk_list_ptr) {
         *v2m_chunk_list_ptr = malloc(sizeof(v2m_chunk));
@@ -474,6 +512,12 @@ void insert_v2p_page_pair_to_v2m_chunk_list(
             //  2. expand v2m chunk
             (*v2m_chunk_head_ptr)->vaddr_end = end_vaddr;
         } else {
+#ifdef PRINT_BLOCK
+            // v2m block
+            printf("v2mva: 0x%lx ~ 0x%lx, size: %ld KB\n", (*v2m_chunk_head_ptr)->vaddr_begin,
+                (*v2m_chunk_head_ptr)->vaddr_end,  ((*v2m_chunk_head_ptr)->vaddr_end + 1 - (*v2m_chunk_head_ptr)->vaddr_begin)>>10);
+#endif
+
             // incontinuous vaddr, so new v2m chunk
             v2m_chunk_t new_page = malloc(sizeof(v2m_chunk));
             memset(new_page, 0, sizeof(v2m_chunk));
@@ -950,26 +994,44 @@ setup_v2m_table(
     v2m_chunk_t v2m_chunk_list = NULL;
     v2m_chunk_t v2m_chunk_head = NULL;
 
-    if (VMI_SUCCESS ==
-        walkthrough_shm_snapshot_pagetable(vmi, dtb, &v2m_chunk_list, &v2m_chunk_head))
+#ifdef WALK_PT_MEASUREMENT
+    struct timeval ktv_start;
+    struct timeval ktv_end;
+    gettimeofday(&ktv_start, 0);
+#endif
+
+    status_t ret_walk = walkthrough_shm_snapshot_pagetable(vmi, dtb, &v2m_chunk_list, &v2m_chunk_head);
+
+#ifdef WALK_PT_MEASUREMENT
+    gettimeofday(&ktv_end, 0);
+    print_measurement("walk page table", ktv_start, ktv_end);
+#endif
+
+#ifdef PROBE_MMAP_ADDR_MEASUREMENT
+        gettimeofday(&ktv_start, 0);
+#endif
+
+    if (VMI_SUCCESS == ret_walk)
     {
         v2m_chunk_t v2m_chunk_tmp = v2m_chunk_list;
         while (NULL != v2m_chunk_tmp) {
             // probe v2m medial address
             void* maddr_indicator;
-            if (VMI_SUCCESS != probe_v2m_medial_addr(vmi, v2m_chunk_tmp, &maddr_indicator)) {
+            status_t ret_probe_medial_addr = probe_v2m_medial_addr(vmi, v2m_chunk_tmp, &maddr_indicator);
+
+            if (VMI_SUCCESS != ret_probe_medial_addr) {
                 return VMI_FAILURE;
             }
 
+            status_t ret_mmap = mmap_m2p_chunks(vmi, maddr_indicator, v2m_chunk_tmp->m2p_chunks);
             // mmap each m2p memory chunk
-            if (VMI_SUCCESS !=
-                mmap_m2p_chunks(vmi, maddr_indicator, v2m_chunk_tmp->m2p_chunks)) {
+            if (VMI_SUCCESS != ret_mmap) {
                 return VMI_FAILURE;
             }
 
+            status_t ret_del = delete_m2p_chunks(vmi, &v2m_chunk_tmp->m2p_chunks);
             // delete m2p chunks
-            if (VMI_SUCCESS !=
-                delete_m2p_chunks(vmi, &v2m_chunk_tmp->m2p_chunks)) {
+            if (VMI_SUCCESS != ret_del) {
                 return VMI_FAILURE;
             }
 
@@ -978,6 +1040,11 @@ setup_v2m_table(
 
             v2m_chunk_tmp = v2m_chunk_tmp->next;
         }
+
+#ifdef PROBE_MMAP_ADDR_MEASUREMENT
+        gettimeofday(&ktv_end, 0);
+        print_measurement("probe and mmap addr space", ktv_start, ktv_end);
+#endif
 
         v2m_table_t v2m_table_tmp = malloc(sizeof(v2m_table));
         v2m_table_tmp->pid = pid;
@@ -1263,7 +1330,20 @@ kvm_setup_shm_snapshot_mode(
         if (shm_snapshot_status)
             free (shm_snapshot_status);
 
-        return link_mmap_shm_snapshot_dev(vmi);
+#ifdef LINK_MMAP_MEASUREMENT
+        struct timeval ktv_start;
+        struct timeval ktv_end;
+        gettimeofday(&ktv_start, 0);
+#endif
+
+        status_t ret_link_mmap = link_mmap_shm_snapshot_dev(vmi);
+
+#ifdef LINK_MMAP_MEASUREMENT
+        gettimeofday(&ktv_end, 0);
+        print_measurement("link and mmap", ktv_start, ktv_end);
+#endif
+
+        return ret_link_mmap;
     } else {
         if (shm_snapshot_status)
             free (shm_snapshot_status);
