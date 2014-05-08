@@ -91,11 +91,12 @@ START_TEST (test_vmi_get_dgvma)
     vmi_shm_snapshot_create(vmi);
 
     addr_t va = 0x0;
-    size_t count = 4096;
-    unsigned long max_size = 0xffff;
+    size_t count = 0xffff;
+    unsigned long max_size = 0xfffffffff; // enlarge the max_size at the constraint of default test case timeout
     void *buf_readva = malloc(count);
     void *buf_dgvma = NULL;
     for (; va + count <= max_size; va += count) {
+        vmi_v2pcache_flush(vmi); // because the incoherent v2p cache harms us.
         size_t read_va = vmi_read_va(vmi, va, 0, buf_readva, count);
         size_t read_dgvma = vmi_get_dgvma(vmi, va, 0, &buf_dgvma, count);
         fail_unless(read_va == read_dgvma, "vmi_get_dgvma(0x%"PRIx64
