@@ -89,10 +89,28 @@ static void key_128_init(vmi_instance_t vmi, key_128_t key, uint64_t low, uint64
     key->high = high;
 }
 
+/*
+ * Initialize an already allocated key with the given values.
+ * This is for performance!
+ */
+static void key_128_non_page_align_init(vmi_instance_t vmi, key_128_t key, uint64_t low, uint64_t high)
+{
+    key->low = low;
+    key->high = high;
+}
+
+
 static key_128_t key_128_build (vmi_instance_t vmi, uint64_t low, uint64_t high)
 {
     key_128_t key = (key_128_t) safe_malloc(sizeof(struct key_128));
     key_128_init(vmi, key, low, high);
+    return key;
+}
+
+static key_128_t key_128_non_page_align_build (vmi_instance_t vmi, uint64_t low, uint64_t high)
+{
+    key_128_t key = (key_128_t) safe_malloc(sizeof(struct key_128));
+    key_128_non_page_align_init(vmi, key, low, high);
     return key;
 }
 
@@ -593,7 +611,7 @@ typedef struct v2m_cache_entry *v2m_cache_entry_t;
 static v2m_cache_entry_t v2m_cache_entry_create (vmi_instance_t vmi, addr_t ma, uint64_t length)
 {
     v2m_cache_entry_t entry = (v2m_cache_entry_t) safe_malloc(sizeof(struct v2m_cache_entry));
-    ma &= ~((addr_t)vmi->page_size - 1);
+    //ma &= ~((addr_t)vmi->page_size - 1); ma is not necessarily page aligned
     entry->ma = ma;
     entry->length = length;
     entry->last_used = time(NULL);
@@ -626,12 +644,12 @@ v2m_cache_get(
     struct key_128 local_key;
     key_128_t key = &local_key;
 
-    key_128_init(vmi, key, (uint64_t)va, (uint64_t)pid);
+    key_128_non_page_align_init(vmi, key, (uint64_t)va, (uint64_t)pid);
 
     if ((entry = g_hash_table_lookup(vmi->v2m_cache, key)) != NULL) {
 
         entry->last_used = time(NULL);
-        *ma = entry->ma | ((vmi->page_size - 1) & va);
+        *ma = entry->ma; //*ma = entry->ma | ((vmi->page_size - 1) & va); // v2m addr item is not necessarily page aligned
         *length = entry->length;
         dbprint("--v2m cache hit 0x%.16"PRIx64" -- 0x%.16"PRIx64" len 0x%.16"PRIx64" (0x%.16"PRIx64"/0x%.16"PRIx64")\n",
                 va, *ma, *length, key->high, key->low);
@@ -652,7 +670,7 @@ v2m_cache_set(
     if (!va || !ma) {
         return;
     }
-    key_128_t key = key_128_build(vmi, (uint64_t)va, (uint64_t)pid);
+    key_128_t key = key_128_non_page_align_build(vmi, (uint64_t)va, (uint64_t)pid);
     v2m_cache_entry_t entry = v2m_cache_entry_create(vmi, ma, length);
     g_hash_table_insert(vmi->v2m_cache, key, entry);
     dbprint("--v2m cache set 0x%.16"PRIx64" -- 0x%.16"PRIx64" len 0x%.16"PRIx64" (0x%.16"PRIx64"/0x%.16"PRIx64")\n", va,
@@ -667,7 +685,7 @@ v2m_cache_del(
 {
     struct key_128 local_key;
     key_128_t key = &local_key;
-    key_128_init(vmi, key, (uint64_t)va, (uint64_t)pid);
+    key_128_non_page_align_init(vmi, key, (uint64_t)va, (uint64_t)pid);
     dbprint("--v2m cache del 0x%.16"PRIx64" (0x%.16"PRIx64"/0x%.16"PRIx64")\n", va,
             key->high, key->low);
 
