@@ -52,11 +52,27 @@ extern "C" {
 #include <errno.h>
 #include <string.h>
 
+/*
 #define QMP_MEASUREMENT // QMP snapshot-create()
 #define LINK_MMAP_MEASUREMENT // link and mmap snapshot.
 #define WALK_PT_MEASUREMENT //walk guest page table
 #define PROBE_MMAP_ADDR_MEASUREMENT // probe and mmap v2m addr space
-//#define PRINT_BLOCK //print vaddr blocks
+#define PRINT_V2M_BLOCK //print vaddr blocks*/
+//#define PRINT_M2P_BLOCK //print vaddr blocks
+
+
+
+//#define DGVMA_TABLE
+
+    /*
+#define RB_WALK_PT_MEASUREMENT //walk guest page table
+#define RB_PROBE_ADDR_MEASUREMENT // probe v2m addr space
+#define RB_MMAP_M2P_MEASUREMENT // mmap v2m addr space
+#define RB_DEL_M2P_MEASUREMENT // delete m2p chunks*/
+
+//#define RB_PRINT_V2M_BLOCK //print vaddr blocks
+//#define RB_PRINT_M2P_BLOCK
+
 
 /* uncomment this and recompile to enable debug output */
 //#define VMI_DEBUG

@@ -13,6 +13,9 @@ c_sources = \
     read.c \
     strmatch.c \
     write.c \
+    dgvma_rb.c \
+    dgvma_table.c \
+    dgvma_common.c \
     driver/file.c \
     driver/interface.c \
     driver/kvm.c \

@@ -156,6 +156,94 @@ typedef struct _windows_unicode_string32 {
     } __attribute__ ((packed))
     win64_unicode_string_t;
 
+#if ENABLE_SHM_SNAPSHOT == 1
+
+/** Guest virtual-medial-physical address mapping enables
+ *   Direct Guest Virtual Memory Access (DGVMA) to the
+ *   shm-snapshot.
+ *  While the m2p mapping will be established at process
+ *   page table and so MMU will take care of it, we must
+ *   maintain v2m mapping by ourself.
+ *  We use 3 structures to establish and maintain the v2m
+ *   mapping. The three, from top to bottom, are v2m table,
+ *   v2m_chunk and m2p mapping clue chunk.
+ */
+
+/* m2p mapping clue chunk is used to mmap guest physical
+ *  address to medial address (i.e. LibVMI virtual address),
+ *  and will be deleted just after mmap() because munmap()
+ *  can be done with v2m chunk.
+ * In a m2p chunk, the mappings between m and p are consecutive.
+ */
+typedef struct m2p_mapping_clue_chunk_struct {
+    void * medial_mapping_addr;
+    addr_t paddr_begin;
+    addr_t paddr_end;
+    addr_t vaddr_begin;
+    addr_t vaddr_end;
+    struct m2p_mapping_clue_chunk_struct* next;
+} m2p_mapping_clue_chunk, *m2p_mapping_clue_chunk_t;
+
+/* v2m chunk is used to maintain the mapping of v and m.
+ *  We search an medial address of a given virtual address
+ *  in a collection of v2m chunk.
+ * In a m2p chunk, the virtual address range are continuous.
+ */
+typedef struct v2m_chunk_struct {
+    addr_t vaddr_begin;
+    addr_t vaddr_end;
+    void * medial_mapping_addr;
+    m2p_mapping_clue_chunk_t m2p_chunks;
+    struct v2m_chunk_struct* next;
+} v2m_chunk, *v2m_chunk_t;
+
+// v2m table binds a pid and a list of v2m chunks
+typedef struct v2m_table_struct {
+    pid_t pid;
+    v2m_chunk_t v2m_chunks;
+    struct v2m_table_struct* next;
+} v2m_table, *v2m_table_t;
+
+
+/** Red black tree */
+    /* Colors of a node of a red black tree. */
+    typedef enum rb_color
+    {
+      red,
+      black
+    } rb_color_t;
+
+    /* Key of a red black tree, describing a virtual memory area. */
+    typedef struct rb_key
+    {
+      addr_t start_addr;            /** starting address of the VA block */
+      addr_t end_addr;
+    } rb_key_t;
+
+    /* Internal node of a red black tree, describing a v2m mapping. */
+    typedef struct v2m_rb_node
+    {
+      rb_color_t color;                             /** the color: red or black */
+      rb_key_t key;                                 /** the key */
+      m2p_mapping_clue_chunk_t m2p_chunks; /** be used to do mmap(), be NULL after mmap()  */
+      void* media_mapping_addr;           /** mapping address of the VA block, be NULL before mmap() */
+      struct v2m_rb_node * left;                              /** pointer to the left child node, NULL if no left child */
+      struct v2m_rb_node * right;                             /** pointer to the right child node NULL if no right child */
+      struct v2m_rb_node * p;                                 /** pointer to its parent node, NULL if it's a root node */
+    } v2m_rb_node_t;
+
+    // v2m table binds a pid and a list of v2m chunks
+    typedef struct v2m_rb_tree {
+        pid_t pid;
+        v2m_rb_node_t * root_node;
+        struct v2m_rb_tree* next;
+        v2m_rb_node_t * leaf;
+    } v2m_rb_tree_t;
+
+#endif
+
+
+
 /*----------------------------------------------
  * convenience.c
  */
@@ -341,5 +429,77 @@ typedef struct _windows_unicode_string32 {
     #define for_each_event(vmi, iter, table, key, val) \
         g_hash_table_iter_init(&iter, table); \
         while(g_hash_table_iter_next(&iter,(void**)key,(void**)val))
+
+
+#if ENABLE_SHM_SNAPSHOT == 1
+    void m2p_chunk_list_add_v2p_pairs(
+        m2p_mapping_clue_chunk_t *m2p_chunk_list_ptr,
+        m2p_mapping_clue_chunk_t *m2p_chunk_head_ptr,
+        addr_t start_vaddr,
+        addr_t end_vaddr,
+        addr_t start_paddr,
+        addr_t end_paddr);
+    status_t m2p_chunk_list_delete(
+        m2p_mapping_clue_chunk_t* m2p_chunk_list_ptr);
+    status_t m2p_chunk_list_mmap(
+        void* medial_addr_indicator,
+        m2p_mapping_clue_chunk_t m2p_chunk_list,
+        int shm_snapshot_fd);
+    status_t m2p_chunk_list_munmap(
+        v2m_chunk_t v2m_chunk_list);
+    status_t probe_mmap_base_addr(
+        size_t map_size,
+        void ** base_addr_ptr);
+    status_t dgvma_pid_to_dtb(
+        vmi_instance_t vmi,
+        pid_t pid,
+        addr_t * dtb_ptr);
+
+
+/*----------------------------------------------
+ * dgvma_table.c
+ */
+    /*status_t create_v2m_table(
+        vmi_instance_t vmi,
+        pid_t pid,
+        v2m_table_t * v2m_tables_ptr,
+        int shm_snapshot_fd);*/
+    status_t destroy_v2m_table_list(
+        v2m_table_t * v2m_tables_ptr);
+    status_t search_v2m_table(
+        vmi_instance_t vmi,
+        pid_t pid,
+        v2m_table_t * v2m_table_list_ptr,
+        addr_t vaddr,
+        void ** maddr_ptr,
+        size_t * mem_size_ptr,
+        int shm_snapshot_fd);
+
+
+    /*----------------------------------------------
+     * dgvma_rb.c
+     */
+    /*status_t create_v2m_rb_tree(
+        vmi_instance_t vmi,
+        pid_t pid,
+        v2m_rb_tree_t ** v2m_rb_tree_list_ptr);*/
+    /*status_t destroy_v2m_rb_tree(
+        pid_t pid,
+        v2m_rb_tree_t ** v2m_rb_tree_ptr);*/
+    status_t search_v2m_rb_tree(
+        vmi_instance_t vmi,
+        pid_t pid,
+        v2m_rb_tree_t ** rb_tree_list_ptr,
+        addr_t vaddr,
+        void ** maddr_ptr,
+        size_t * mem_size_ptr,
+        int shm_snapshot_fd);
+    status_t destroy_v2m_rb_tree_list(
+        v2m_rb_tree_t ** tree_list_ptr);
+
+
+
+#endif
+
 
 #endif /* PRIVATE_H */
